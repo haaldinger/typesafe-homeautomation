@@ -128,6 +128,8 @@ export interface AudioAction {
   chips: string[];
   /** Stream URI for a play_station action. */
   uri?: string;
+  /** Station/track name for display. */
+  name?: string;
 }
 
 /** One entry in an answer's probability distribution. */

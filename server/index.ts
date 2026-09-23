@@ -243,6 +243,7 @@ app.post("/api/zone-control", async (req, res) => {
       }
       audioAction.chips = [st.name];
       audioAction.uri = st.url;
+      audioAction.name = st.name;
       audioAction.summary = `${zone.name} playing ${st.name}`;
     }
     await sonosGateway.apply([audioAction]);

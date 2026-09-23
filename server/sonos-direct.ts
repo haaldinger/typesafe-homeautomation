@@ -563,7 +563,7 @@ export async function applyDirect(actions: AudioAction[]): Promise<void> {
         break;
       }
       case "play_station":
-        if (a.uri) await playRadioDirect(a.zone, a.uri, a.chips[0] ?? "Radio");
+        if (a.uri) await playRadioDirect(a.zone, a.uri, a.name ?? a.chips[0] ?? "Radio");
         break;
       default:
         // group/ungroup need topology; single-speaker setups can skip.
