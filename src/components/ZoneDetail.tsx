@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import type { EqState, Favorite, QueueTrack, RadioStation, SonosZone, SpotifyResult } from "../../shared/types.ts";
+import type { EqState, Favorite, QueueTrack, RadioStation, Room, SonosZone, SpotifyResult } from "../../shared/types.ts";
 import {
   X,
   Play,
@@ -20,6 +20,7 @@ import {
   Search,
   Plus,
   MicVocal,
+  Lightbulb,
 } from "lucide-react";
 import {
   fetchEq,
@@ -50,6 +51,10 @@ interface ZoneDetailProps {
   onPlaySpotify: (uri: string, title: string, mode?: "now" | "end") => void;
   onPlayRadio: (url: string, name: string) => void;
   onToggleGroup: (targetZoneId: string) => void;
+  /** Rooms with color lights that can follow this zone's album art (empty hides the control). */
+  lightRooms: Room[];
+  lightSyncRoom?: string;
+  onLightSync: (roomId: string | null) => void;
 }
 
 function Empty({ children, error = false }: { children: ReactNode; error?: boolean }) {
@@ -92,6 +97,9 @@ export function ZoneDetail({
   onPlaySpotify,
   onPlayRadio,
   onToggleGroup,
+  lightRooms,
+  lightSyncRoom,
+  onLightSync,
 }: ZoneDetailProps) {
   const [tab, setTab] = useState<Tab>("queue");
   const isPlaying = zone.playback === "playing";
@@ -370,6 +378,26 @@ export function ZoneDetail({
                 />
                 <span className="text-xs font-mono font-medium text-neutral-300 w-9 text-right">{zone.volume}%</span>
               </div>
+
+              {lightRooms.length > 0 && (
+                <div className="flex items-center justify-center gap-2 pt-1 text-xs text-neutral-400">
+                  <Lightbulb className={`w-4 h-4 ${lightSyncRoom ? "text-fuchsia-400" : ""}`} />
+                  <label htmlFor="light-sync">Lights follow the music in</label>
+                  <select
+                    id="light-sync"
+                    value={lightSyncRoom ?? ""}
+                    onChange={(e) => onLightSync(e.target.value || null)}
+                    className="bg-neutral-900 border border-neutral-700/60 rounded-lg px-2 py-1 text-neutral-200 focus:outline-none focus:border-fuchsia-500/60"
+                  >
+                    <option value="">Off</option>
+                    {lightRooms.map((r) => (
+                      <option key={r.id} value={r.id}>
+                        {r.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
             </div>
           </div>
 

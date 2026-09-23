@@ -9,13 +9,15 @@
     "dev:web": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
-    "start": "node --import tsx server/index.ts"
+    "start": "node --import tsx server/index.ts",
+    "hue:pair": "tsx server/hue-pair.ts"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.3.3",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
+    "jpeg-js": "^0.4.4",
     "lucide-react": "^0.546.0",
     "motion": "^12.23.24",
     "react": "^19.0.1",

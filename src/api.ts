@@ -7,10 +7,13 @@
 
 import type {
   CommandResponse,
+  DeviceAction,
   EqState,
   Favorite,
   HomeState,
+  PatternKind,
   QueueTrack,
+  RunningPattern,
   RadioStation,
   SonosZone,
   SpotifyResult,
@@ -84,6 +87,20 @@ export const fetchHealth = () => getJson<HealthInfo>("/api/health", "health");
 export const fetchHome = () => getJson<HomeState>("/api/home", "home");
 export const fetchZones = () => getJson<SonosZone[]>("/api/zones", "zones");
 export const fetchStations = () => getJson<StationInfo[]>("/api/stations", "stations");
+
+export const fetchPatterns = () => getJson<RunningPattern[]>("/api/patterns", "patterns");
+export const startPattern = (room: string, kind: PatternKind, colors?: string[]) =>
+  postJson<RunningPattern[]>("/api/patterns", { room, kind, colors }, "start pattern");
+export const stopPattern = (room: string) => postJson<RunningPattern[]>("/api/patterns/stop", { room }, "stop pattern");
+
+/** zoneId -> roomId whose lights follow that zone's album art. */
+export const fetchLightSync = () => getJson<Record<string, string>>("/api/light-sync", "light sync");
+export const updateLightSync = (zoneId: string, roomId: string | null) =>
+  postJson<Record<string, string>>("/api/light-sync", { zoneId, roomId }, "light sync");
+
+/** Push manual device changes to a real gateway; returns the refreshed home. */
+export const controlDevices = (actions: DeviceAction[]) =>
+  postJson<HomeState>("/api/device", { actions }, "device control");
 
 /** Direct (non-NL) zone control: play/pause/next/previous/set_volume/play_station/group/ungroup. */
 export function zoneControl(

@@ -3,6 +3,7 @@
 // stays server-side.
 
 import type { Device, DeviceAction, DeviceType, HomeState, Room } from "../shared/types.ts";
+import { hexToRgb, rgbToHex } from "../shared/color.ts";
 
 const baseUrl = () => (process.env.HASS_URL ?? "http://localhost:8123").replace(/\/$/, "");
 const token = () => process.env.HASS_TOKEN ?? "";
@@ -74,7 +75,19 @@ function toDevice(e: HAEntity): Device {
   switch (type) {
     case "light": {
       const brightness = num(attrs.brightness);
-      return { ...base, on: e.state === "on", level: brightness !== undefined ? Math.round((brightness / 255) * 100) : undefined };
+      const modes = Array.isArray(attrs.supported_color_modes) ? (attrs.supported_color_modes as string[]) : [];
+      const rgb = Array.isArray(attrs.rgb_color) ? (attrs.rgb_color as number[]) : undefined;
+      const kelvin = num(attrs.color_temp_kelvin);
+      const white = attrs.color_mode === "color_temp";
+      return {
+        ...base,
+        on: e.state === "on",
+        level: brightness !== undefined ? Math.round((brightness / 255) * 100) : undefined,
+        supportsColor: modes.some((m) => ["hs", "xy", "rgb", "rgbw", "rgbww"].includes(m)),
+        supportsWhite: modes.includes("color_temp"),
+        ...(white && kelvin ? { colorMode: "white" as const, kelvin } : {}),
+        ...(!white && rgb ? { colorMode: "color" as const, color: rgbToHex(rgb[0], rgb[1], rgb[2]) } : {}),
+      };
     }
     case "fan":
       return { ...base, on: e.state === "on", intensity: num(attrs.percentage) };
@@ -120,11 +133,17 @@ interface ServiceCall {
 
 function mapService(domain: string, patch: DeviceAction["patch"]): ServiceCall | null {
   switch (domain) {
-    case "light":
+    case "light": {
       if (patch.on === false || patch.level === 0) return { service: "turn_off" };
-      if (patch.level !== undefined) return { service: "turn_on", data: { brightness_pct: patch.level } };
-      if (patch.on === true) return { service: "turn_on" };
+      const data: Record<string, unknown> = {};
+      if (patch.level !== undefined) data.brightness_pct = patch.level;
+      if (patch.color) data.rgb_color = hexToRgb(patch.color);
+      if (patch.kelvin !== undefined) data.color_temp_kelvin = patch.kelvin;
+      if (patch.alert) data.flash = "short";
+      if (patch.effect === "colorloop") data.effect = "colorloop";
+      if (Object.keys(data).length || patch.on === true) return { service: "turn_on", data };
       return null;
+    }
     case "lock":
       if (patch.locked === true) return { service: "lock" };
       if (patch.locked === false) return { service: "unlock" };

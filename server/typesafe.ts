@@ -1,4 +1,10 @@
 import type { HomeState, SonosZone } from "../shared/types.ts";
+import { LIGHT_COLORS } from "../shared/color.ts";
+
+/** Stable choice id for a scene name ("Chiefs mode!" -> "chiefs_mode"). */
+export function sceneKey(name: string): string {
+  return name.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "") || "scene";
+}
 
 // ---- TypeSafe question/answer wire types -------------------------------------
 
@@ -95,7 +101,14 @@ export const QUESTION_LABELS: Record<string, string> = {
   group_with: "Which zone should it be grouped with?",
   volume_level: "How loud should it be?",
   is_compound: "Does this ask for more than one thing?",
+  light_color: "What color should the lights be?",
+  light_scene: "Which saved lighting scene?",
+  pattern_style: "What kind of light pattern?",
+  pattern_speed: "How fast should the pattern go?",
 };
+
+/** Seconds per beat for each pattern_speed level. */
+export const PATTERN_SPEEDS_MS = [5000, 3000, 1500, 700];
 
 /**
  * Every question the assistant might need, asked in a single call. Most answers
@@ -157,7 +170,7 @@ export function buildQuestions(home: HomeState, zones: SonosZone[] = []): Record
     instructions: "What action does `request` ask to perform on the target device(s)?",
     criteria: {
       turn_on: "Turn on / activate / enable.",
-      turn_off: "Turn off / deactivate / disable.",
+      turn_off: "Turn off / deactivate / disable (switch the device off, not just stop an animation).",
       toggle: "Flip the current state without saying which way.",
       set_level: "Set brightness, temperature, volume, or open amount to a specific level.",
       increase: "Make it more: brighter, warmer, louder, higher, open more.",
@@ -166,6 +179,13 @@ export function buildQuestions(home: HomeState, zones: SonosZone[] = []): Record
       unlock: "Unlock.",
       open: "Open (blinds, garage).",
       close: "Close (blinds, garage).",
+      set_color: "Change a light's color or white tone (e.g. make it blue, turn it red, warmer or cooler white, daylight).",
+      party_mode: "Start party mode: cycle or loop the lights through colors, disco, rainbow.",
+      stop_effect:
+        "Stop party mode, blinking, flashing patterns or any light animation and go back to normal light. When `light_patterns_running` is not empty, a plain 'stop', 'stop the lights' or 'make it stop' means this, not turning the lights off.",
+      light_pattern:
+        "Start a repeating light pattern or animation: blink, alternate or switch between colors, pulse or breathe, flicker like a fireplace or candle, police lights.",
+      flash: "Flash or blink the lights to get attention.",
       none: "No clear action.",
     },
   },
@@ -246,6 +266,66 @@ export function buildQuestions(home: HomeState, zones: SonosZone[] = []): Record
     },
   },
   };
+
+  const colorCriteria: Record<string, string | null> = {};
+  for (const [id, c] of Object.entries(LIGHT_COLORS)) colorCriteria[id] = c.label;
+  colorCriteria.warm_white = "Warm, cozy, amber-ish white (also 'warmer', 'softer').";
+  colorCriteria.daylight = "Cool, crisp, bluish daylight white (also 'cooler', 'brighter white').";
+  colorCriteria.none = "No color or white tone mentioned.";
+  questions.light_color = {
+    type: "choice",
+    instructions: "If `request` asks for a light color or white tone, which one fits best? Choose 'none' if no color is mentioned.",
+    criteria: colorCriteria,
+  };
+
+  questions.pattern_style = {
+    type: "choice",
+    instructions: "If `request` asks for a repeating light pattern or animation, which kind? Choose 'none' if it doesn't.",
+    criteria: {
+      blink: "Blink or flash on and off repeatedly (optionally in given colors).",
+      alternate: "Alternate, switch, swap, or cycle between specific colors.",
+      pulse: "Pulse, breathe, or fade slowly up and down.",
+      fireplace: "Flicker like a fireplace, fire, or candle.",
+      police: "Police lights, siren lights, red and blue flashing.",
+      none: "No repeating pattern.",
+    },
+  };
+  questions.pattern_speed = {
+    type: "score",
+    instructions: "If `request` asks for a repeating light pattern, how fast should it repeat? Use any stated interval (e.g. 'every 3 seconds').",
+    criteria: [
+      "Very slow: every 5 seconds or more",
+      "Slow: about every 3 seconds",
+      "Medium: about every 1 to 2 seconds",
+      "Fast: faster than once a second",
+    ],
+  };
+  // One membership question per color, so "purple and pink" can name several.
+  for (const [id, c] of Object.entries(LIGHT_COLORS)) {
+    if (!("hex" in c)) continue;
+    questions[`pattern_color_${id}`] = {
+      type: "noul",
+      instructions: `Does \`request\` ask for the color ${c.label} as part of a light pattern?`,
+    };
+  }
+
+  // Saved scenes from the device backend (e.g. Hue), offered by name.
+  const sceneNames = [...new Set((home.scenes ?? []).map((s) => s.name))];
+  if (sceneNames.length > 0) {
+    const sceneCriteria: Record<string, string | null> = {};
+    for (const name of sceneNames) sceneCriteria[sceneKey(name)] = name;
+    sceneCriteria.none = "No saved lighting scene is named.";
+    questions.light_scene = {
+      type: "choice",
+      instructions: "Does `request` name one of these saved lighting scenes? Choose 'none' if it doesn't.",
+      criteria: sceneCriteria,
+    };
+    const cat = questions.category as ChoiceQuestion;
+    cat.criteria = {
+      ...cat.criteria,
+      scene: `${cat.criteria.scene} Also any saved lighting scene: ${sceneNames.join(", ")}.`,
+    };
+  }
 
   // One membership question per zone, so grouping requests can name several
   // zones symmetrically instead of forcing a single "other" choice.

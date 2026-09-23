@@ -1,10 +1,11 @@
 // Pluggable device backend. The simulator keeps client-provided state (default,
 // reliable for demos); the Home Assistant gateway reads and drives real devices.
-// Select with GATEWAY=sim | homeassistant in .env.
+// Select with GATEWAY=sim | homeassistant | hue in .env.
 
 import type { DeviceAction, HomeState } from "../shared/types.ts";
 import { createInitialHome } from "../shared/home.ts";
 import { commitToHomeAssistant, loadHomeAssistantState } from "./homeassistant.ts";
+import { commitToHue, loadHueState } from "./hue.ts";
 
 export interface DeviceGateway {
   name: string;
@@ -24,6 +25,16 @@ const simGateway: DeviceGateway = {
   },
 };
 
+const hueGateway: DeviceGateway = {
+  name: "hue",
+  async loadState() {
+    return loadHueState();
+  },
+  async commit(actions) {
+    await commitToHue(actions);
+  },
+};
+
 const homeAssistantGateway: DeviceGateway = {
   name: "homeassistant",
   async loadState() {
@@ -37,5 +48,6 @@ const homeAssistantGateway: DeviceGateway = {
 export function getGateway(): DeviceGateway {
   const kind = (process.env.GATEWAY ?? "sim").toLowerCase();
   if (kind === "homeassistant" || kind === "hass" || kind === "ha") return homeAssistantGateway;
+  if (kind === "hue") return hueGateway;
   return simGateway;
 }

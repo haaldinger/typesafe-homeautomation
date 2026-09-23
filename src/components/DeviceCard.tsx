@@ -1,11 +1,21 @@
-import type { Device } from "../../shared/types.ts";
-import { Lightbulb, Thermometer, Lock, Unlock, Blinds, Fan, Power, Plus, Minus, Tv } from "lucide-react";
+import type { Device, DevicePatch } from "../../shared/types.ts";
+import { Lightbulb, Thermometer, Lock, Unlock, Blinds, Fan, Power, Plus, Minus, Tv, PartyPopper, Zap } from "lucide-react";
+import { colorName, kelvinToHex, LIGHT_COLORS, MAX_KELVIN, MIN_KELVIN } from "../../shared/color.ts";
 
 interface DeviceCardProps {
   device: Device;
   flash?: boolean;
   onToggle: (d: Device) => void;
-  onUpdate?: (d: Device, patch: Partial<Device>) => void;
+  onUpdate?: (d: Device, patch: DevicePatch) => void;
+}
+
+const SWATCHES = Object.entries(LIGHT_COLORS).flatMap(([id, c]) => ("hex" in c ? [{ id, label: c.label, hex: c.hex }] : []));
+
+/** What the light actually looks like right now, for tinting the card. */
+function displayColor(d: Device): string | undefined {
+  if (d.colorMode === "white" && d.kelvin) return kelvinToHex(d.kelvin);
+  if (d.colorMode === "color" && d.color) return d.color;
+  return undefined;
 }
 
 // Renders the shared Device shape: `level` = brightness / blinds open %,
@@ -22,7 +32,10 @@ export function DeviceCard({ device, flash = false, onToggle, onUpdate }: Device
   const intensity = device.intensity ?? (device.on ? 60 : 0);
   const setpoint = device.temperature;
 
-  const update = (patch: Partial<Device>) => onUpdate?.(device, patch);
+  const update = (patch: DevicePatch) => onUpdate?.(device, patch);
+  const tint = isLight && device.on ? displayColor(device) : undefined;
+  const partying = device.effect === "colorloop";
+  const colorLabel = partying ? "party mode" : device.colorMode ? colorName(device) : "";
 
   return (
     <div
@@ -41,7 +54,7 @@ export function DeviceCard({ device, flash = false, onToggle, onUpdate }: Device
       {isLight && device.on && (
         <div
           className="absolute inset-0 -z-10 rounded-2xl bg-amber-500/5 blur-xl pointer-events-none transition-opacity"
-          style={{ opacity: (level / 100) * 0.7 }}
+          style={{ opacity: (level / 100) * 0.7, ...(tint ? { backgroundColor: `${tint}22` } : {}) }}
         />
       )}
 
@@ -49,7 +62,8 @@ export function DeviceCard({ device, flash = false, onToggle, onUpdate }: Device
         <div className="flex items-center gap-3 min-w-0">
           <div
             onClick={() => onToggle(device)}
-            className={`w-10 h-10 shrink-0 rounded-xl flex items-center justify-center cursor-pointer transition-all duration-300 ${
+            style={tint ? { backgroundColor: tint, boxShadow: `0 4px 14px ${tint}66` } : undefined}
+            className={`w-10 h-10 shrink-0 rounded-xl flex items-center justify-center cursor-pointer transition-all duration-300 ${partying ? "animate-pulse" : ""} ${
               isLock
                 ? device.locked
                   ? "bg-emerald-500/15 text-emerald-400 border border-emerald-500/30"
@@ -78,7 +92,7 @@ export function DeviceCard({ device, flash = false, onToggle, onUpdate }: Device
               {device.name}
             </h4>
             <div className="text-xs text-neutral-400">
-              {isLight && <span>{device.on ? `${level}%` : "Off"}</span>}
+              {isLight && <span>{device.on ? `${level}%${colorLabel ? ` · ${colorLabel}` : ""}` : "Off"}</span>}
               {isThermo && <span>{device.on ? (setpoint !== undefined ? `Set to ${setpoint}°F` : "On") : "Off"}</span>}
               {isLock && (
                 <span className={device.locked ? "text-emerald-400 font-medium" : "text-rose-400 font-medium"}>
@@ -125,6 +139,79 @@ export function DeviceCard({ device, flash = false, onToggle, onUpdate }: Device
             className="w-full accent-amber-500 disabled:opacity-30 transition"
             aria-label={`${device.name} brightness`}
           />
+
+          {device.on && device.supportsColor && (
+            <div className="flex items-center gap-1.5 mt-3">
+              {SWATCHES.map((s) => (
+                <button
+                  key={s.id}
+                  onClick={() => update({ color: s.hex, colorMode: "color", effect: "none", on: true })}
+                  className={`w-5 h-5 rounded-full border transition hover:scale-110 ${
+                    device.colorMode === "color" && device.color === s.hex && !partying
+                      ? "border-white ring-2 ring-white/40"
+                      : "border-white/10"
+                  }`}
+                  style={{ backgroundColor: s.hex }}
+                  title={s.label}
+                  aria-label={`Set ${device.name} to ${s.label}`}
+                />
+              ))}
+              <label
+                className="relative w-5 h-5 rounded-full border border-white/20 cursor-pointer overflow-hidden hover:scale-110 transition"
+                style={{ background: "conic-gradient(red, yellow, lime, cyan, blue, magenta, red)" }}
+                title="Pick any color"
+              >
+                <input
+                  type="color"
+                  value={device.color ?? "#ffffff"}
+                  onChange={(e) => update({ color: e.target.value, colorMode: "color", effect: "none", on: true })}
+                  className="absolute inset-0 opacity-0 cursor-pointer"
+                  aria-label={`${device.name} custom color`}
+                />
+              </label>
+            </div>
+          )}
+
+          {device.on && device.supportsWhite && (
+            <div className="mt-3">
+              <div className="flex items-center justify-between text-[11px] text-neutral-400 mb-1.5">
+                <span>Warm</span>
+                <span>Cool</span>
+              </div>
+              <input
+                type="range"
+                min={MIN_KELVIN}
+                max={MAX_KELVIN}
+                step={50}
+                value={device.colorMode === "white" && device.kelvin ? device.kelvin : 2700}
+                onChange={(e) => update({ kelvin: parseInt(e.target.value, 10), colorMode: "white", effect: "none", on: true })}
+                className="w-full"
+                style={{ accentColor: kelvinToHex(device.kelvin ?? 2700) }}
+                aria-label={`${device.name} white temperature`}
+              />
+            </div>
+          )}
+
+          {device.on && device.supportsColor && (
+            <div className="flex gap-1.5 mt-3">
+              <button
+                onClick={() => update({ effect: partying ? "none" : "colorloop", on: true })}
+                className={`flex-1 flex items-center justify-center gap-1 py-1 text-[10px] font-semibold rounded-lg border transition ${
+                  partying
+                    ? "bg-fuchsia-500/20 border-fuchsia-500/40 text-fuchsia-300"
+                    : "bg-neutral-800/60 border-neutral-700/50 text-neutral-400 hover:text-neutral-200"
+                }`}
+              >
+                <PartyPopper className="w-3 h-3" /> {partying ? "Stop party" : "Party"}
+              </button>
+              <button
+                onClick={() => update({ alert: true })}
+                className="flex-1 flex items-center justify-center gap-1 py-1 text-[10px] font-semibold rounded-lg border bg-neutral-800/60 border-neutral-700/50 text-neutral-400 hover:text-neutral-200 transition"
+              >
+                <Zap className="w-3 h-3" /> Flash
+              </button>
+            </div>
+          )}
         </div>
       )}
 

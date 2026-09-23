@@ -4,11 +4,15 @@ import type {
   CommandResolution,
   Device,
   DeviceAction,
+  DevicePatch,
   DistributionEntry,
   HomeState,
+  PatternAction,
+  PatternKind,
   SonosZone,
 } from "../shared/types.ts";
 import { ROOM_NAME } from "../shared/home.ts";
+import { colorName, LIGHT_COLORS } from "../shared/color.ts";
 import { stationById } from "./stations.ts";
 import type {
   Answer,
@@ -18,7 +22,7 @@ import type {
   ScoreAnswer,
   SystemOneResponse,
 } from "./typesafe.ts";
-import { QUESTION_LABELS } from "./typesafe.ts";
+import { PATTERN_SPEEDS_MS, QUESTION_LABELS, sceneKey } from "./typesafe.ts";
 
 function choice(r: SystemOneResponse, id: string): ChoiceAnswer {
   return r.answers[id] as ChoiceAnswer;
@@ -67,26 +71,62 @@ function targetDevices(
   return devices;
 }
 
+/** The color/white patch the model asked for, limited to what the light supports. */
+function colorPatch(device: Device, r: SystemOneResponse): DevicePatch | null {
+  const answer = r.answers.light_color as ChoiceAnswer | undefined;
+  const c = answer ? LIGHT_COLORS[answer.choice] : undefined;
+  if (!c) return null;
+  if ("hex" in c) return device.supportsColor === false ? null : { on: true, color: c.hex, colorMode: "color", effect: "none" };
+  return device.supportsWhite === false ? null : { on: true, kelvin: c.kelvin, colorMode: "white", effect: "none" };
+}
+
+function lightPatch(device: Device, action: string, r: SystemOneResponse): DevicePatch | null {
+  switch (action) {
+    case "turn_on":
+      return { on: true };
+    case "turn_off":
+      return { on: false };
+    case "toggle":
+      return { on: !device.on };
+    case "set_level": {
+      const level = brightnessFromScore(score(r, "brightness_level").score);
+      return { on: level > 0, level };
+    }
+    case "increase":
+      return { on: true, level: Math.min(100, (device.level ?? 0) + 20) };
+    case "decrease": {
+      const level = Math.max(0, (device.level ?? 0) - 20);
+      return { on: level > 0, level };
+    }
+    case "set_color":
+      return colorPatch(device, r);
+    case "party_mode":
+      return device.supportsColor === false ? null : { on: true, effect: "colorloop" };
+    case "stop_effect":
+      // The bridge rejects effect changes on lights that are off.
+      return device.on ? { effect: "none" } : null;
+    case "flash":
+      return { alert: true };
+    default:
+      return null;
+  }
+}
+
 function applyAction(
   device: Device,
   action: string,
   r: SystemOneResponse,
-): Partial<Device> | null {
+): DevicePatch | null {
   switch (device.type) {
-    case "light":
-      if (action === "turn_on") return { on: true };
-      if (action === "turn_off") return { on: false };
-      if (action === "toggle") return { on: !device.on };
-      if (action === "set_level") {
-        const level = brightnessFromScore(score(r, "brightness_level").score);
-        return { on: level > 0, level };
+    case "light": {
+      const patch = lightPatch(device, action, r);
+      // "Turn the lights on blue", "brighten it and make it warm" carry a color too.
+      if (action !== "turn_off" && action !== "set_color" && (patch?.on || action === "none")) {
+        const color = colorPatch(device, r);
+        if (color) return { ...patch, ...color };
       }
-      if (action === "increase") return { on: true, level: Math.min(100, (device.level ?? 0) + 20) };
-      if (action === "decrease") {
-        const level = Math.max(0, (device.level ?? 0) - 20);
-        return { on: level > 0, level };
-      }
-      return null;
+      return patch;
+    }
 
     case "thermostat": {
       if (action === "increase") return { temperature: (device.temperature ?? 70) + 2 };
@@ -171,7 +211,7 @@ const SCENES: Record<string, (home: HomeState) => DeviceAction[]> = {
     }),
 };
 
-function act(device: Device, patch: Partial<Device>, verb: string, roomName?: string): DeviceAction {
+function act(device: Device, patch: DevicePatch, verb: string, roomName?: string): DeviceAction {
   const label = roomName ?? ROOM_NAME[device.room] ?? device.room;
   return {
     deviceId: device.id,
@@ -182,7 +222,13 @@ function act(device: Device, patch: Partial<Device>, verb: string, roomName?: st
   };
 }
 
-function describePatch(device: Device, patch: Partial<Device>): string {
+function describePatch(device: Device, patch: DevicePatch): string {
+  if (patch.alert) return "flashed";
+  if (patch.effect === "colorloop") return "party mode on";
+  if (patch.color || patch.kelvin !== undefined) {
+    return `set to ${colorName(patch)}${patch.level !== undefined ? ` at ${patch.level}%` : ""}`;
+  }
+  if (patch.effect === "none") return "party mode off";
   if (patch.locked !== undefined) return patch.locked ? "locked" : "unlocked";
   if (patch.temperature !== undefined) return `set to ${patch.temperature}°`;
   if (device.type === "blinds" && patch.level !== undefined) return patch.level > 0 ? `opened to ${patch.level}%` : "closed";
@@ -363,18 +409,39 @@ export function resolveCommand(
     };
   }
 
+  const roomLabel = (id: string) => home.rooms.find((rm) => rm.id === id)?.name ?? ROOM_NAME[id] ?? id;
+
+  // Saved lighting scenes ("set the living room to Relax") can come through as a
+  // scene or as a device command.
+  if (category === "scene" || category === "device_command") {
+    const sceneAction = resolveLightScene(home, r, used, roomLabel);
+    if (sceneAction) {
+      return {
+        request,
+        category,
+        actions: [sceneAction],
+        audioActions: [],
+        answers: buildTraces(r, used, questions),
+        note: `Activated "${sceneAction.deviceName}".`,
+      };
+    }
+  }
+
   if (category === "scene") {
     used.add("scene");
     const sceneId = choice(r, "scene").choice;
     const actions = SCENES[sceneId]?.(home) ?? [];
-    return {
-      request,
-      category,
-      actions,
-      audioActions: [],
-      answers: buildTraces(r, used, questions),
-      note: sceneId === "none" ? "No matching scene." : `Activated "${sceneId.replace(/_/g, " ")}".`,
-    };
+    if (actions.length > 0) {
+      return {
+        request,
+        category,
+        actions,
+        audioActions: [],
+        answers: buildTraces(r, used, questions),
+        note: `Activated "${sceneId.replace(/_/g, " ")}".`,
+      };
+    }
+    // Not a known scene (e.g. "party mode"): try it as a device command below.
   }
 
   if (category === "query") {
@@ -403,9 +470,23 @@ export function resolveCommand(
 
   if (action === "set_level" && deviceType === "light") used.add("brightness_level");
   if (deviceType === "thermostat") used.add("temperature_direction");
+  if (deviceType === "light" || action === "set_color") used.add("light_color");
 
-  const targets = targetDevices(home, scope, room, deviceType);
-  const roomLabel = (id: string) => home.rooms.find((rm) => rm.id === id)?.name ?? ROOM_NAME[id] ?? id;
+  const pattern = resolvePattern(r, action, room, roomLabel, used);
+  if (pattern) {
+    return {
+      request,
+      category,
+      actions: [],
+      audioActions: [],
+      patternActions: [pattern],
+      answers: buildTraces(r, used, questions),
+    };
+  }
+
+  // Color and effect requests only make sense for lights, even if the device type was missed.
+  const lightOnly = ["set_color", "party_mode", "stop_effect", "flash"].includes(action);
+  const targets = targetDevices(home, scope, room, lightOnly ? "light" : deviceType);
   const actions: DeviceAction[] = [];
   for (const device of targets) {
     const patch = applyAction(device, action, r);
@@ -414,13 +495,70 @@ export function resolveCommand(
     }
   }
 
+  // "Stop the lights" also ends any running pattern (which restores the lights).
+  const patternActions: PatternAction[] =
+    action === "stop_effect"
+      ? [{ op: "stop", room: room === "none" ? "all" : room, roomName: room === "none" ? "the house" : roomLabel(room), summary: "patterns stopped" }]
+      : [];
+
   return {
     request,
     category,
     actions,
     audioActions: [],
+    patternActions,
     answers: buildTraces(r, used, questions),
-    note: actions.length === 0 ? "No devices matched that command." : undefined,
+    note: actions.length === 0 && patternActions.length === 0 ? "No devices matched that command." : undefined,
+  };
+}
+
+function resolvePattern(
+  r: SystemOneResponse,
+  action: string,
+  room: string,
+  roomLabel: (id: string) => string,
+  used: Set<string>,
+): PatternAction | null {
+  const styleAnswer = r.answers.pattern_style as ChoiceAnswer | undefined;
+  if (!styleAnswer) return null;
+  const style = styleAnswer.choice;
+
+  const colors: string[] = [];
+  for (const [id, c] of Object.entries(LIGHT_COLORS)) {
+    const a = r.answers[`pattern_color_${id}`] as NoulAnswer | undefined;
+    if ("hex" in c && a && a.noul > 0.5) colors.push(c.hex);
+  }
+  const single = LIGHT_COLORS[(r.answers.light_color as ChoiceAnswer | undefined)?.choice ?? ""];
+  if (!colors.length && single && "hex" in single) colors.push(single.hex);
+
+  // A one-off "flash the lights" stays a single flash unless colors make it a pattern.
+  const wantsPattern =
+    action === "light_pattern" ||
+    (style !== "none" && !["stop_effect", "turn_off"].includes(action) && (action !== "flash" || colors.length > 0));
+  if (!wantsPattern) return null;
+
+  used.add("pattern_style").add("pattern_speed");
+  for (const id of Object.keys(LIGHT_COLORS)) if (`pattern_color_${id}` in r.answers) used.add(`pattern_color_${id}`);
+
+  const kind: PatternKind = style === "none" ? "blink" : (style as PatternKind);
+  const speed = score(r, "pattern_speed").score;
+  const intervalMs = PATTERN_SPEEDS_MS[Math.max(0, Math.min(PATTERN_SPEEDS_MS.length - 1, Math.round(speed)))];
+  const target = room === "none" ? "all" : room;
+  const where = target === "all" ? "the house" : roomLabel(target);
+  const colorWords = colors.map((c) => colorName({ color: c })).join(" & ");
+  const what = {
+    blink: `blinking${colorWords ? ` ${colorWords}` : ""}`,
+    alternate: `alternating ${colorWords || "colors"}`,
+    pulse: `pulsing${colorWords ? ` ${colorWords}` : ""}`,
+    fireplace: "flickering like a fireplace",
+    police: "flashing police lights",
+  }[kind];
+  return {
+    op: "start",
+    room: target,
+    roomName: where,
+    summary: `${where} ${what}`,
+    spec: { kind, colors, intervalMs },
   };
 }
 
@@ -430,14 +568,44 @@ function describeStateWord(deviceType: string): string {
   return "on";
 }
 
+function resolveLightScene(
+  home: HomeState,
+  r: SystemOneResponse,
+  used: Set<string>,
+  roomLabel: (id: string) => string,
+): DeviceAction | null {
+  const answer = r.answers.light_scene as ChoiceAnswer | undefined;
+  if (!answer || answer.choice === "none") return null;
+  used.add("light_scene").add("room");
+  const room = choice(r, "room").choice;
+  const matches = (home.scenes ?? []).filter((s) => sceneKey(s.name) === answer.choice);
+  const scene = matches.find((s) => s.room === room) ?? matches[0];
+  if (!scene) return null;
+  return {
+    deviceId: scene.id,
+    deviceName: scene.name,
+    room: scene.room ?? "",
+    summary: scene.room ? `${roomLabel(scene.room)} set to "${scene.name}"` : `"${scene.name}" scene on`,
+    patch: {},
+  };
+}
+
 /** Apply a resolution's patches to a home, returning a new HomeState. */
 export function applyActions(home: HomeState, actions: DeviceAction[]): HomeState {
   if (actions.length === 0) return home;
-  const byId = new Map(actions.map((a) => [a.deviceId, a.patch]));
+  // `alert` is a one-off blink, not state to keep.
+  const byId = new Map(actions.map(({ deviceId, patch: { alert, transitionMs, ...state } }) => [deviceId, state]));
   return {
     ...home,
     devices: home.devices.map((d) => (byId.has(d.id) ? { ...d, ...byId.get(d.id) } : d)),
   };
+}
+
+/** A bare "stop" while a light pattern is running is a light command, not chit-chat. */
+export function treatStopAsLightCommand(r: SystemOneResponse, patternsRunning: boolean): void {
+  if (!patternsRunning || categoryOf(r) !== "conversation") return;
+  if ((r.answers.action as ChoiceAnswer | undefined)?.choice !== "stop_effect") return;
+  r.answers.category = { ...choice(r, "category"), choice: "device_command" };
 }
 
 export function categoryOf(r: SystemOneResponse): string {

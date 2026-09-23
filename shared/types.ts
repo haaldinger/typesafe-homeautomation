@@ -27,6 +27,16 @@ export interface Device {
   intensity?: number;
   /** Locks: true when locked. Mirrors `on` for clarity in the UI. */
   locked?: boolean;
+  /** Lights: current color as #rrggbb (meaningful when colorMode is "color"). */
+  color?: string;
+  /** Lights: white color temperature in Kelvin (meaningful when colorMode is "white"). */
+  kelvin?: number;
+  colorMode?: "color" | "white";
+  effect?: "colorloop" | "none";
+  supportsColor?: boolean;
+  supportsWhite?: boolean;
+  /** False when the backend can't reach the device (e.g. a Hue bulb switched off at the wall). */
+  available?: boolean;
 }
 
 export interface Room {
@@ -34,9 +44,51 @@ export interface Room {
   name: string;
 }
 
+/** A lighting scene saved on the device backend (e.g. a Hue scene). */
+export interface LightScene {
+  /** Used as the DeviceAction deviceId to activate it. */
+  id: string;
+  name: string;
+  room?: RoomId;
+}
+
 export interface HomeState {
   rooms: Room[];
   devices: Device[];
+  scenes?: LightScene[];
+}
+
+export type DevicePatch = Partial<
+  Pick<Device, "on" | "level" | "temperature" | "intensity" | "locked" | "color" | "kelvin" | "colorMode" | "effect">
+> & {
+  /** One-off: briefly flash the light. Not stored as device state. */
+  alert?: boolean;
+  /** Fade duration for this change. Not stored as device state. */
+  transitionMs?: number;
+};
+
+export type PatternKind = "blink" | "alternate" | "pulse" | "fireplace" | "police";
+
+/** A repeating light animation for one room ("all" for every room). */
+export interface PatternSpec {
+  kind: PatternKind;
+  /** #rrggbb colors to use; some kinds ignore them. */
+  colors: string[];
+  intervalMs: number;
+}
+
+export interface RunningPattern extends PatternSpec {
+  room: RoomId | "all";
+  label: string;
+}
+
+/** A pattern the assistant decided to start or stop. */
+export interface PatternAction {
+  op: "start" | "stop";
+  room: RoomId | "all";
+  roomName: string;
+  summary: string;
+  spec?: PatternSpec;
 }
 
 /** A single concrete mutation the assistant decided to make. */
@@ -45,7 +97,7 @@ export interface DeviceAction {
   deviceName: string;
   room: RoomId;
   summary: string;
-  patch: Partial<Pick<Device, "on" | "level" | "temperature" | "intensity" | "locked">>;
+  patch: DevicePatch;
 }
 
 /** A Sonos zone (one amp / room of audio). */
@@ -160,6 +212,7 @@ export interface CommandResolution {
   category: string;
   actions: DeviceAction[];
   audioActions: AudioAction[];
+  patternActions?: PatternAction[];
   answers: AnswerTrace[];
   note?: string;
 }
@@ -181,4 +234,7 @@ export interface CommandResponse {
   home?: HomeState;
   /** Current Sonos zones after any audio actions. */
   zones?: SonosZone[];
+  patternActions?: PatternAction[];
+  /** Patterns running after this command. */
+  patterns?: RunningPattern[];
 }

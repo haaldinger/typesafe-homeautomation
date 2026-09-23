@@ -1,6 +1,17 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import type { CommandResponse, Device, HomeState, QueueTrack, SonosZone } from "../shared/types.ts";
+import type {
+  CommandResponse,
+  Device,
+  DeviceAction,
+  DevicePatch,
+  HomeState,
+  LightScene,
+  PatternKind,
+  QueueTrack,
+  RunningPattern,
+  SonosZone,
+} from "../shared/types.ts";
 import { DeviceCard } from "./components/DeviceCard.tsx";
 import { ZoneCard } from "./components/ZoneCard.tsx";
 import { ZoneDetail } from "./components/ZoneDetail.tsx";
@@ -12,6 +23,12 @@ import { SettingsModal } from "./components/SettingsModal.tsx";
 import {
   fetchHealth,
   fetchHome,
+  controlDevices,
+  fetchLightSync,
+  updateLightSync,
+  fetchPatterns,
+  startPattern,
+  stopPattern,
   fetchZones,
   fetchStations,
   fetchQueue,
@@ -26,7 +43,15 @@ import {
   type HealthInfo,
   type StationInfo,
 } from "./api.ts";
-import { Mic, Send, Sparkles, Activity, AlertCircle, Clock } from "lucide-react";
+import { Mic, Send, Sparkles, Activity, AlertCircle, Clock, Waves, Square } from "lucide-react";
+
+const PATTERN_BUTTONS: { kind: PatternKind; label: string; icon: string }[] = [
+  { kind: "blink", label: "Blink", icon: "💡" },
+  { kind: "alternate", label: "Alternate", icon: "🔀" },
+  { kind: "pulse", label: "Pulse", icon: "🌊" },
+  { kind: "fireplace", label: "Fireplace", icon: "🔥" },
+  { kind: "police", label: "Police", icon: "🚨" },
+];
 
 // Minimal typing for the browser Web Speech API (not in lib.dom yet).
 interface SpeechResultEvent {
@@ -62,6 +87,7 @@ function roomSummary(devices: Device[]): SummaryChip[] {
   if (lights.length) {
     const on = lights.filter((d) => d.on).length;
     chips.push(on ? { label: `${on}/${lights.length} lights on`, tone: "on" } : { label: "Lights off", tone: "off" });
+    if (lights.some((d) => d.on && d.effect === "colorloop")) chips.push({ label: "Party mode", tone: "on" });
   }
   for (const t of of("thermostat")) {
     if (t.temperature !== undefined) chips.push({ label: `${Math.round(t.temperature)}°`, tone: t.on ? "on" : "off" });
@@ -207,6 +233,59 @@ export default function App() {
     return () => window.clearInterval(id);
   }, [health]);
 
+  const realDevices = Boolean(health && health.gateway !== "sim");
+  const pendingDevices = useRef(new Map<string, { device: Device; patch: DevicePatch }>());
+  const pendingTimer = useRef<number | undefined>(undefined);
+
+  // zoneId -> roomId whose lights follow that zone's album art.
+  const [lightSync, setLightSyncState] = useState<Record<string, string>>({});
+  useEffect(() => {
+    if (realDevices) fetchLightSync().then(setLightSyncState).catch(() => {});
+  }, [realDevices]);
+
+  function onLightSync(zoneId: string, roomId: string | null) {
+    updateLightSync(zoneId, roomId)
+      .then(setLightSyncState)
+      .catch((e) => showError(e, "Couldn't change light sync."));
+  }
+
+  const [patterns, setPatterns] = useState<RunningPattern[]>([]);
+
+  // Real device backends change outside Aura too (e.g. the Hue app).
+  useEffect(() => {
+    if (!realDevices) return;
+    const refresh = () => {
+      fetchHome().then(setHome).catch(() => {});
+      fetchPatterns().then(setPatterns).catch(() => {});
+    };
+    refresh();
+    const id = window.setInterval(refresh, 5000);
+    return () => window.clearInterval(id);
+  }, [realDevices]);
+
+  function onStartPattern(room: string, kind: PatternKind) {
+    // Blink and alternate reuse the room's current light colors when it has some.
+    const colors = [
+      ...new Set(
+        (home?.devices ?? [])
+          .filter((d) => d.room === room && d.type === "light" && d.on && d.colorMode === "color" && d.color)
+          .map((d) => d.color!),
+      ),
+    ];
+    startPattern(room, kind, kind === "alternate" && colors.length < 2 ? undefined : colors)
+      .then(setPatterns)
+      .catch((e) => showError(e, "Couldn't start that pattern."));
+  }
+
+  function onStopPattern(room: string) {
+    stopPattern(room)
+      .then((list) => {
+        setPatterns(list);
+        window.setTimeout(() => fetchHome().then(setHome).catch(() => {}), 600);
+      })
+      .catch((e) => showError(e, "Couldn't stop the pattern."));
+  }
+
   // Load and refresh the queue whenever a zone detail view is open.
   useEffect(() => {
     if (!detailZoneId) return;
@@ -341,31 +420,65 @@ export default function App() {
     window.setTimeout(() => setFlashing(new Set()), 1200);
   }
 
-  // Manual device edits are client-side (as before): the edited home state is
-  // sent with the next /api/command so the simulator gateway sees it.
-  function patchDevice(id: string, patch: Partial<Device>) {
-    setHome((h) => (h ? { ...h, devices: h.devices.map((x) => (x.id === id ? { ...x, ...patch } : x)) } : h));
+  // Optimistic local update. The simulator only needs that (the edited home rides
+  // along with the next /api/command); real gateways also get the change pushed.
+  function patchDevices(changes: { device: Device; patch: DevicePatch }[]) {
+    const byId = new Map(changes.map(({ device, patch: { alert, ...state } }) => [device.id, state]));
+    setHome((h) => (h ? { ...h, devices: h.devices.map((x) => (byId.has(x.id) ? { ...x, ...byId.get(x.id) } : x)) } : h));
+    if (!realDevices || changes.length === 0) return;
+    // Sliders fire continuously; coalesce changes per device before hitting the bridge.
+    for (const { device, patch } of changes) {
+      const prev = pendingDevices.current.get(device.id);
+      pendingDevices.current.set(device.id, { device, patch: { ...prev?.patch, ...patch } });
+    }
+    window.clearTimeout(pendingTimer.current);
+    pendingTimer.current = window.setTimeout(flushDevices, 150);
+  }
+
+  function flushDevices() {
+    const actions: DeviceAction[] = [...pendingDevices.current.values()].map(({ device, patch }) => ({
+      deviceId: device.id,
+      deviceName: device.name,
+      room: device.room,
+      summary: `${device.name} updated`,
+      patch,
+    }));
+    pendingDevices.current.clear();
+    sendDeviceActions(actions);
+  }
+
+  function sendDeviceActions(actions: DeviceAction[]) {
+    controlDevices(actions)
+      .then(setHome)
+      .catch((e) => {
+        showError(e, "Couldn't update that device.");
+        fetchHome().then(setHome).catch(() => {});
+      });
+  }
+
+  function activateScene(scene: LightScene) {
+    sendDeviceActions([{ deviceId: scene.id, deviceName: scene.name, room: scene.room ?? "", summary: scene.name, patch: {} }]);
+  }
+
+  function patchDevice(id: string, patch: DevicePatch) {
+    const device = home?.devices.find((d) => d.id === id);
+    if (device) patchDevices([{ device, patch }]);
   }
 
   function onManualToggle(d: Device) {
     patchDevice(d.id, toggleDevice(d));
   }
 
-  function onDeviceUpdate(d: Device, patch: Partial<Device>) {
+  function onDeviceUpdate(d: Device, patch: DevicePatch) {
     patchDevice(d.id, patch);
   }
 
   // Room quick action: turn every non-lock device in the room on/off.
   function onRoomQuickAction(roomId: string) {
-    setHome((h) => {
-      if (!h) return h;
-      const roomDevs = h.devices.filter((d) => d.room === roomId && d.type !== "lock");
-      const target = !roomDevs.some((d) => d.on);
-      return {
-        ...h,
-        devices: h.devices.map((d) => (d.room !== roomId || d.type === "lock" ? d : { ...d, on: target })),
-      };
-    });
+    if (!home) return;
+    const roomDevs = home.devices.filter((d) => d.room === roomId && d.type !== "lock");
+    const target = !roomDevs.some((d) => d.on);
+    patchDevices(roomDevs.map((device) => ({ device, patch: { on: target } })));
   }
 
   // Voice input via the browser's built-in speech recognition.
@@ -423,6 +536,7 @@ export default function App() {
     try {
       const res = await sendCommand(text.trim(), home);
       setResult(res);
+      if (res.patterns) setPatterns(res.patterns);
       const flashIds = res.actions.map((a) => a.deviceId);
       if (res.home) setHome(res.home);
       if (res.zones) {
@@ -485,27 +599,86 @@ export default function App() {
           id: room.id,
           title: room.name,
           subtitle: `${devices.length} ${devices.length === 1 ? "device" : "devices"}`,
-          summary: roomSummary(devices),
+          summary: [
+            ...patterns
+              .filter((p) => p.room === room.id || p.room === "all")
+              .map((p): SummaryChip => ({ label: p.label, tone: "on" })),
+            ...roomSummary(devices),
+          ],
           quickAction: () => onRoomQuickAction(room.id),
-          render: () => (
-            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3 sm:gap-4">
-              {devices.map((d) => (
-                <DeviceCard
-                  key={d.id}
-                  device={d}
-                  flash={flashing.has(d.id)}
-                  onToggle={onManualToggle}
-                  onUpdate={onDeviceUpdate}
-                />
-              ))}
-            </div>
-          ),
+          render: () => {
+            const scenes = (home.scenes ?? []).filter((s) => s.room === room.id);
+            const running = patterns.find((p) => p.room === room.id || p.room === "all");
+            const hasColorLights = devices.some((d) => d.type === "light" && d.supportsColor && d.available !== false);
+            return (
+              <>
+                {realDevices && hasColorLights && (
+                  <div className="flex flex-wrap items-center gap-2 mb-3">
+                    {running ? (
+                      <>
+                        <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-fuchsia-500/15 border border-fuchsia-500/40 text-xs font-semibold text-fuchsia-300">
+                          <Waves className="w-3.5 h-3.5 animate-pulse" />
+                          {running.label}
+                          {running.room === "all" ? " (whole house)" : ""}
+                        </span>
+                        <button
+                          onClick={() => onStopPattern(running.room)}
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 text-xs font-semibold text-white transition"
+                        >
+                          <Square className="w-3 h-3 fill-current" /> Stop
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <span className="text-[11px] uppercase font-bold tracking-wider text-neutral-500 mr-1">Patterns</span>
+                        {PATTERN_BUTTONS.map((p) => (
+                          <button
+                            key={p.kind}
+                            onClick={() => onStartPattern(room.id, p.kind)}
+                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-neutral-800/60 hover:bg-neutral-800 border border-neutral-700/60 hover:border-fuchsia-500/40 text-xs font-medium text-neutral-300 hover:text-white transition"
+                          >
+                            <span>{p.icon}</span>
+                            {p.label}
+                          </button>
+                        ))}
+                      </>
+                    )}
+                  </div>
+                )}
+                {scenes.length > 0 && (
+                  <div className="flex flex-wrap gap-2 mb-4">
+                    {scenes.map((s) => (
+                      <button
+                        key={s.id}
+                        onClick={() => activateScene(s)}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-neutral-800/60 hover:bg-neutral-800 border border-neutral-700/60 hover:border-amber-500/40 text-xs font-medium text-neutral-300 hover:text-white transition"
+                      >
+                        <Sparkles className="w-3 h-3 text-amber-400" />
+                        {s.name}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3 sm:gap-4">
+                  {devices.map((d) => (
+                    <DeviceCard
+                      key={d.id}
+                      device={d}
+                      flash={flashing.has(d.id)}
+                      onToggle={onManualToggle}
+                      onUpdate={onDeviceUpdate}
+                    />
+                  ))}
+                </div>
+              </>
+            );
+          },
         });
       }
     }
     return defs;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [home, zones, stations, byRoom, flashing, detailZoneId]);
+  }, [home, zones, stations, byRoom, flashing, detailZoneId, patterns, realDevices]);
 
   const orderedSections = useMemo(() => {
     const byId = new Map(sectionDefs.map((d) => [d.id, d]));
@@ -726,6 +899,13 @@ export default function App() {
           onPlaySpotify={onPlaySpotifyTrack}
           onPlayRadio={onPlayRadioStation}
           onToggleGroup={onToggleSpeakerGroup}
+          lightRooms={
+            realDevices && home
+              ? home.rooms.filter((r) => home.devices.some((d) => d.room === r.id && d.type === "light" && d.supportsColor))
+              : []
+          }
+          lightSyncRoom={lightSync[detailZone.id]}
+          onLightSync={(roomId) => onLightSync(detailZone.id, roomId)}
         />
       )}
 

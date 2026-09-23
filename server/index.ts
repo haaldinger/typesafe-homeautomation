@@ -1,9 +1,9 @@
 import "dotenv/config";
 import express from "express";
 import cors from "cors";
-import type { AudioAction, CommandResolution, CommandResponse, DeviceAction } from "../shared/types.ts";
+import type { AudioAction, CommandResolution, CommandResponse, DeviceAction, PatternAction, PatternSpec } from "../shared/types.ts";
 import { buildQuestions, homeSummary, systemOne } from "./typesafe.ts";
-import { applyActions, categoryOf, isCompound, resolveCommand } from "./resolve.ts";
+import { applyActions, categoryOf, isCompound, resolveCommand, treatStopAsLightCommand } from "./resolve.ts";
 import { conversationalReply, llmEnabled, splitRequest } from "./llm.ts";
 import { getGateway } from "./gateway.ts";
 import { resetMockZones, sonosGateway } from "./sonos.ts";
@@ -12,12 +12,15 @@ import { searchSpotify, spotifyConfigured } from "./spotify.ts";
 import { fetchLyrics } from "./lyrics.ts";
 import { searchRadio } from "./radio.ts";
 import { rawTransportDirect } from "./sonos-direct.ts";
+import { getLightSync, setLightSync, startLightSync } from "./lightsync.ts";
+import { interruptPatterns, listPatterns, PATTERN_PRESETS, startPattern, stopPattern } from "./patterns.ts";
 
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: "1mb" }));
 
 const gateway = getGateway();
+if (gateway.name !== "sim") startLightSync(gateway, sonosGateway);
 const errMsg = (e: unknown) => (e instanceof Error ? e.message : "Unknown error");
 
 app.get("/api/health", (_req, res) => {
@@ -38,6 +41,70 @@ app.get("/api/home", async (_req, res) => {
   } catch (err) {
     res.status(500).json({ error: errMsg(err) });
   }
+});
+
+// Direct (non-NL) device control from the touch UI. Returns the refreshed home.
+app.post("/api/device", async (req, res) => {
+  try {
+    const actions: DeviceAction[] = Array.isArray(req.body?.actions) ? req.body.actions : [];
+    if (actions.some((a) => typeof a?.deviceId !== "string" || typeof a?.patch !== "object")) {
+      res.status(400).json({ error: "Each action needs a deviceId and a patch" });
+      return;
+    }
+    interruptPatterns(gateway, actions.map((a) => a.room));
+    await gateway.commit(actions);
+    res.json(await gateway.loadState(req.body?.home));
+  } catch (err) {
+    res.status(500).json({ error: errMsg(err) });
+  }
+});
+
+// Repeating light patterns (blink, alternate, pulse, fireplace, police).
+app.get("/api/patterns", (_req, res) => {
+  res.json(listPatterns());
+});
+
+app.post("/api/patterns", async (req, res) => {
+  try {
+    const room: string = req.body?.room ?? "";
+    const kind = req.body?.kind as PatternSpec["kind"];
+    if (!room || !(kind in PATTERN_PRESETS)) {
+      res.status(400).json({ error: "room and a valid pattern kind are required" });
+      return;
+    }
+    const preset = PATTERN_PRESETS[kind];
+    const colors: string[] = Array.isArray(req.body?.colors)
+      ? req.body.colors.filter((c: unknown) => typeof c === "string" && /^#[0-9a-f]{6}$/i.test(c))
+      : preset.colors;
+    await startPattern(gateway, room, { kind, colors, intervalMs: Number(req.body?.intervalMs) || preset.intervalMs });
+    res.json(listPatterns());
+  } catch (err) {
+    res.status(500).json({ error: errMsg(err) });
+  }
+});
+
+app.post("/api/patterns/stop", async (req, res) => {
+  try {
+    await stopPattern(gateway, req.body?.room || "all");
+    res.json(listPatterns());
+  } catch (err) {
+    res.status(500).json({ error: errMsg(err) });
+  }
+});
+
+// Which Sonos zone's album art drives which room's lights.
+app.get("/api/light-sync", (_req, res) => {
+  res.json(getLightSync());
+});
+
+app.post("/api/light-sync", (req, res) => {
+  const zoneId: string = req.body?.zoneId ?? "";
+  const roomId: string | null = req.body?.roomId || null;
+  if (!zoneId) {
+    res.status(400).json({ error: "zoneId is required" });
+    return;
+  }
+  res.json(setLightSync(zoneId, roomId));
 });
 
 app.get("/api/zones", async (_req, res) => {
@@ -271,8 +338,18 @@ function summarizeReply(
   resolutions: CommandResolution[],
   actions: DeviceAction[],
   audioActions: AudioAction[],
+  patternActions: PatternAction[],
 ): string {
-  const summaries = [...actions.map((a) => a.summary), ...audioActions.map((a) => a.summary)];
+  const summaries = [
+    ...actions.map((a) => a.summary),
+    ...audioActions.map((a) => a.summary),
+    ...patternActions.filter((p) => p.op === "start").map((p) => p.summary),
+  ];
+  // Stopping a pattern also sends "party mode off" to every light; one line is enough.
+  if (patternActions.some((p) => p.op === "stop") && !patternActions.some((p) => p.op === "start")) {
+    const stop = patternActions.find((p) => p.op === "stop")!;
+    return `Done — lights in ${stop.roomName} back to normal.`;
+  }
   if (summaries.length === 0) {
     const notes = resolutions.map((r) => r.note).filter(Boolean);
     return notes.length ? notes.join(" ") : "I couldn't find anything to do for that.";
@@ -301,7 +378,12 @@ app.post("/api/command", async (req, res) => {
 
     const evaluate = async (text: string) => {
       const r = await systemOne(
-        { request: text, home: homeSummary(home), speaker_zones: zones.map((z) => z.name) },
+        {
+          request: text,
+          home: homeSummary(home),
+          speaker_zones: zones.map((z) => z.name),
+          light_patterns_running: listPatterns().map((p) => `${p.room}: ${p.label}`),
+        },
         questions,
       );
       calls += 1;
@@ -312,6 +394,7 @@ app.post("/api/command", async (req, res) => {
 
     // 1. Speculative fan-out: one call, every question.
     const base = await evaluate(request);
+    treatStopAsLightCommand(base, listPatterns().length > 0);
     const category = categoryOf(base);
     const compound = isCompound(base);
 
@@ -362,14 +445,41 @@ app.post("/api/command", async (req, res) => {
       allAudioActions.push(...resolution.audioActions);
     }
 
+    const allPatternActions = resolutions.flatMap((r) => r.patternActions ?? []);
+
+    // A direct change to a room takes over from any pattern running there, except
+    // rooms being stopped explicitly, which get their lights restored below.
+    const stopping = new Set(allPatternActions.filter((p) => p.op === "stop").map((p) => p.room));
+    if (gateway.name !== "sim" && !stopping.has("all")) {
+      interruptPatterns(gateway, allActions.map((a) => a.room).filter((room) => !stopping.has(room)));
+    }
+
     // Push the decided actions to the real backends (no-op for the simulator) in parallel.
     const [, zonesAfter] = await Promise.all([
       gateway.commit(allActions),
       allAudioActions.length > 0 ? sonosGateway.apply(allAudioActions).then(() => sonosGateway.getZones()) : Promise.resolve(zones),
     ]);
 
+    const patternNotes: string[] = [];
+    if (gateway.name !== "sim") {
+      for (const p of allPatternActions) {
+        if (p.op === "stop") await stopPattern(gateway, p.room);
+        else if (p.spec) await startPattern(gateway, p.room, p.spec).catch((e) => patternNotes.push(errMsg(e)));
+      }
+    } else if (allPatternActions.some((p) => p.op === "start")) {
+      patternNotes.push("Light patterns need real lights (set GATEWAY=hue or homeassistant).");
+    }
+
+    // Real backends report the true result (a scene changes many lights at once).
+    const homeAfter =
+      gateway.name !== "sim" && (allActions.length > 0 || allPatternActions.length > 0)
+        ? await gateway.loadState().catch(() => workingHome)
+        : workingHome;
+
     const response: CommandResponse = {
-      reply: summarizeReply(resolutions, allActions, allAudioActions),
+      reply: [summarizeReply(resolutions, allActions, allAudioActions, allPatternActions), ...patternNotes].join(" "),
+      patternActions: allPatternActions,
+      patterns: listPatterns(),
       request,
       category,
       isCompound: compound,
@@ -379,7 +489,7 @@ app.post("/api/command", async (req, res) => {
       audioActions: allAudioActions,
       usage: { inputTokens, outputTokens, calls },
       latencyMs: Date.now() - started,
-      home: workingHome,
+      home: homeAfter,
       zones: zonesAfter,
     };
     res.json(response);

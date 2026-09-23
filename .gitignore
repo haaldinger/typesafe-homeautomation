@@ -5,3 +5,5 @@ dist
 *.log
 .DS_Store
 .aura-spotify.json
+.aura-hue.json
+.aura-lightsync.json
