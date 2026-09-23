@@ -1,67 +1,120 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { CSSProperties } from "react";
+import type { ReactNode } from "react";
 import type { EqState, Favorite, QueueTrack, RadioStation, SonosZone, SpotifyResult } from "../../shared/types.ts";
-import { fetchEq, fetchFavorites, fetchLyrics, searchRadio, searchSpotify, setEq, type Lyrics } from "../api.ts";
+import {
+  X,
+  Play,
+  Pause,
+  SkipForward,
+  SkipBack,
+  Volume2,
+  VolumeX,
+  Radio,
+  Music2,
+  ListMusic,
+  SlidersHorizontal,
+  Trash2,
+  Users,
+  Headphones,
+  Star,
+  Search,
+  Plus,
+  MicVocal,
+} from "lucide-react";
+import {
+  fetchEq,
+  fetchFavorites,
+  fetchLyrics,
+  searchRadio,
+  searchSpotify,
+  setEq,
+  type Lyrics,
+  type StationInfo,
+} from "../api.ts";
+import { coverStyle, fmtTime } from "../format.ts";
 
-/** Deterministic gradient cover derived from a seed string. */
-function coverStyle(seed: string): CSSProperties {
-  let h = 0;
-  for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) >>> 0;
-  const a = h % 360;
-  const b = (a + 60 + ((h >> 8) % 120)) % 360;
-  return { background: `linear-gradient(135deg, hsl(${a} 70% 45%), hsl(${b} 65% 30%))` };
-}
+type Tab = "queue" | "radio" | "favorites" | "spotify" | "lyrics" | "eq" | "group";
 
-function fmt(sec: number): string {
-  if (!sec || sec < 0) return "0:00";
-  const m = Math.floor(sec / 60);
-  const s = Math.floor(sec % 60);
-  return `${m}:${s.toString().padStart(2, "0")}`;
-}
-
-type Tab = "queue" | "radio" | "favorites" | "search" | "lyrics" | "sound";
-
-export function ZoneDetail({
-  zone,
-  queue,
-  stations,
-  spotifyEnabled,
-  onClose,
-  onControl,
-  onQueue,
-  onPlayFavorite,
-  onPlaySpotify,
-  onPlayRadio,
-}: {
+interface ZoneDetailProps {
   zone: SonosZone;
   queue: QueueTrack[];
-  stations: { id: string; name: string; category?: string }[];
+  stations: StationInfo[];
+  allZones: SonosZone[];
   spotifyEnabled: boolean;
+  /** False when the backend's Sonos mode can't change grouping (direct mode). */
+  groupingSupported: boolean;
   onClose: () => void;
   onControl: (action: string, value?: number, station?: string) => void;
   onQueue: (op: "play" | "remove", position: number) => void;
   onPlayFavorite: (id: string) => void;
   onPlaySpotify: (uri: string, title: string, mode?: "now" | "end") => void;
   onPlayRadio: (url: string, name: string) => void;
-}) {
-  const active = zone.playback === "playing";
-  const volRef = useRef<HTMLDivElement>(null);
-  const dragging = useRef(false);
-  const [tab, setTab] = useState<Tab>("queue");
+  onToggleGroup: (targetZoneId: string) => void;
+}
 
+function Empty({ children, error = false }: { children: ReactNode; error?: boolean }) {
+  return (
+    <div className={`text-center py-10 text-xs ${error ? "text-rose-300" : "text-neutral-500"}`}>{children}</div>
+  );
+}
+
+function Thumb({ src, seed, icon }: { src?: string; seed: string; icon: ReactNode }) {
+  return (
+    <span
+      className="w-10 h-10 rounded-lg overflow-hidden bg-neutral-800 shrink-0 flex items-center justify-center text-white/70"
+      style={src ? undefined : coverStyle(seed)}
+    >
+      {src ? (
+        <img
+          src={src}
+          alt=""
+          className="w-full h-full object-cover"
+          onError={(e) => (e.currentTarget.style.display = "none")}
+        />
+      ) : (
+        icon
+      )}
+    </span>
+  );
+}
+
+export function ZoneDetail({
+  zone,
+  queue,
+  stations,
+  allZones,
+  spotifyEnabled,
+  groupingSupported,
+  onClose,
+  onControl,
+  onQueue,
+  onPlayFavorite,
+  onPlaySpotify,
+  onPlayRadio,
+  onToggleGroup,
+}: ZoneDetailProps) {
+  const [tab, setTab] = useState<Tab>("queue");
+  const isPlaying = zone.playback === "playing";
+  const track = zone.track;
+  const pct = zone.duration ? Math.min(100, ((zone.elapsed ?? 0) / zone.duration) * 100) : 0;
+
+  // Favorites
   const [favorites, setFavorites] = useState<Favorite[]>([]);
+  // Spotify search
   const [searchQ, setSearchQ] = useState("");
   const [results, setResults] = useState<SpotifyResult[]>([]);
   const [searching, setSearching] = useState(false);
   const [searchErr, setSearchErr] = useState<string | null>(null);
-  const [lyrics, setLyrics] = useState<Lyrics | null>(null);
-  const [lyricsLoading, setLyricsLoading] = useState(false);
-
+  // Radio search
   const [radioQ, setRadioQ] = useState("");
   const [radioResults, setRadioResults] = useState<RadioStation[]>([]);
   const [radioSearching, setRadioSearching] = useState(false);
   const [radioErr, setRadioErr] = useState<string | null>(null);
-
+  const [radioSearched, setRadioSearched] = useState(false);
+  // Lyrics
+  const [lyrics, setLyrics] = useState<Lyrics | null>(null);
+  const [lyricsLoading, setLyricsLoading] = useState(false);
+  // EQ
   const [eq, setEqState] = useState<EqState | null>(null);
 
   useEffect(() => {
@@ -71,62 +124,53 @@ export function ZoneDetail({
   }, [onClose]);
 
   useEffect(() => {
-    fetchFavorites().then(setFavorites).catch(() => setFavorites([]));
+    fetchFavorites().then(setFavorites);
   }, []);
 
   useEffect(() => {
-    if (tab !== "sound") return;
+    if (tab !== "eq") return;
     fetchEq(zone.id).then(setEqState).catch(() => setEqState(null));
   }, [tab, zone.id]);
 
-  async function changeEq(field: keyof EqState, value: number | boolean) {
-    console.log(`[changeEq] Setting ${field} to ${value}`);
-    setEqState((cur) => (cur ? { ...cur, [field]: value } : cur));
-    try {
-      const result = await setEq(zone.id, field, value);
-      console.log(`[changeEq] Response:`, result);
-      setEqState(result);
-    } catch (e) {
-      console.error(`[changeEq] Error:`, e);
-      fetchEq(zone.id).then(setEqState).catch(() => {});
-    }
-  }
-
-  async function runRadio() {
-    const q = radioQ.trim();
-    if (!q) return;
-    setRadioSearching(true);
-    setRadioErr(null);
-    try {
-      setRadioResults(await searchRadio(q));
-    } catch (e) {
-      setRadioErr(e instanceof Error ? e.message : "Radio search failed");
-      setRadioResults([]);
-    } finally {
-      setRadioSearching(false);
-    }
-  }
-
-  const trackKey = `${zone.track?.artist}|${zone.track?.title}`;
+  const trackKey = `${track?.artist}|${track?.title}`;
   useEffect(() => {
-    if (tab !== "lyrics" || !zone.track) return;
+    if (tab !== "lyrics" || !track) return;
+    let cancelled = false;
     setLyricsLoading(true);
     setLyrics(null);
-    fetchLyrics(zone.track.artist, zone.track.title, zone.duration ?? 0)
-      .then(setLyrics)
-      .catch(() => setLyrics(null))
-      .finally(() => setLyricsLoading(false));
+    fetchLyrics(track.artist, track.title, zone.duration ?? 0)
+      .then((l) => !cancelled && setLyrics(l))
+      .catch(() => !cancelled && setLyrics(null))
+      .finally(() => !cancelled && setLyricsLoading(false));
+    return () => {
+      cancelled = true;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab, trackKey]);
 
-  const pct =
-    zone.duration && zone.elapsed !== undefined ? Math.min(100, (zone.elapsed / zone.duration) * 100) : 0;
+  const activeLine = useMemo(() => {
+    if (!lyrics?.synced.length) return -1;
+    const t = zone.elapsed ?? 0;
+    let idx = -1;
+    for (let i = 0; i < lyrics.synced.length; i++) {
+      if (lyrics.synced[i].time <= t) idx = i;
+      else break;
+    }
+    return idx;
+  }, [lyrics, zone.elapsed]);
 
-  function volFromEvent(clientX: number): number {
-    const el = volRef.current;
-    if (!el) return zone.volume;
-    const r = el.getBoundingClientRect();
-    return Math.round(Math.max(0, Math.min(1, (clientX - r.left) / r.width)) * 100);
+  const activeLineRef = useRef<HTMLLIElement>(null);
+  useEffect(() => {
+    activeLineRef.current?.scrollIntoView({ block: "center", behavior: "smooth" });
+  }, [activeLine]);
+
+  async function changeEq(field: keyof EqState, value: number | boolean) {
+    setEqState((cur) => (cur ? { ...cur, [field]: value } : cur));
+    try {
+      setEqState(await setEq(zone.id, field, value));
+    } catch {
+      fetchEq(zone.id).then(setEqState).catch(() => {});
+    }
   }
 
   async function runSearch() {
@@ -144,364 +188,499 @@ export function ZoneDetail({
     }
   }
 
-  // Index of the currently-sung synced lyric line.
-  const activeLine = useMemo(() => {
-    if (!lyrics?.synced.length) return -1;
-    const t = zone.elapsed ?? 0;
-    let idx = -1;
-    for (let i = 0; i < lyrics.synced.length; i++) {
-      if (lyrics.synced[i].time <= t) idx = i;
-      else break;
+  async function runRadio() {
+    const q = radioQ.trim();
+    if (!q) return;
+    setRadioSearching(true);
+    setRadioErr(null);
+    try {
+      setRadioResults(await searchRadio(q));
+    } catch (e) {
+      setRadioErr(e instanceof Error ? e.message : "Radio search failed");
+      setRadioResults([]);
+    } finally {
+      setRadioSearching(false);
+      setRadioSearched(true);
     }
-    return idx;
-  }, [lyrics, zone.elapsed]);
+  }
 
-  const activeLineRef = useRef<HTMLLIElement>(null);
-  useEffect(() => {
-    activeLineRef.current?.scrollIntoView({ block: "center", behavior: "smooth" });
-  }, [activeLine]);
+  const stationsByCategory = useMemo(() => {
+    const map = new Map<string, StationInfo[]>();
+    for (const s of stations) {
+      const cat = s.category || "Stations";
+      const list = map.get(cat) ?? [];
+      list.push(s);
+      map.set(cat, list);
+    }
+    return [...map.entries()];
+  }, [stations]);
+
+  const otherZones = allZones.filter((z) => z.id !== zone.id);
+  const showGroupTab = groupingSupported && otherZones.length > 0;
+
+  const tabs: { id: Tab; label: string; icon: ReactNode; accent?: string }[] = [
+    { id: "queue", label: `Up Next (${queue.length})`, icon: <ListMusic className="w-3.5 h-3.5" /> },
+    { id: "radio", label: "Radio", icon: <Radio className="w-3.5 h-3.5" /> },
+    { id: "favorites", label: "Favorites", icon: <Star className="w-3.5 h-3.5" /> },
+    { id: "spotify", label: "Spotify", icon: <Music2 className="w-3.5 h-3.5 text-emerald-400" />, accent: "emerald" },
+    { id: "lyrics", label: "Lyrics", icon: <MicVocal className="w-3.5 h-3.5" /> },
+    { id: "eq", label: "Sound", icon: <SlidersHorizontal className="w-3.5 h-3.5" /> },
+    ...(showGroupTab
+      ? [{ id: "group" as Tab, label: "Group", icon: <Users className="w-3.5 h-3.5 text-blue-400" />, accent: "blue" }]
+      : []),
+  ];
+
+  const tabClass = (t: (typeof tabs)[number]) => {
+    if (tab !== t.id) return "text-neutral-400 hover:text-neutral-200 hover:bg-neutral-900 border border-transparent";
+    if (t.accent === "emerald") return "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40";
+    if (t.accent === "blue") return "bg-blue-500/20 text-blue-300 border border-blue-500/40";
+    return "bg-amber-500/20 text-amber-300 border border-amber-500/40";
+  };
+
+  const inputClass =
+    "flex-1 px-3.5 py-2 rounded-xl bg-neutral-900 border border-neutral-800 text-xs text-white placeholder-neutral-500 focus:outline-none focus:border-amber-500/60";
+  const goClass =
+    "px-3 py-2 rounded-xl bg-neutral-800 hover:bg-neutral-700 disabled:opacity-40 text-xs font-semibold text-white flex items-center gap-1.5 transition";
+  const rowClass =
+    "group flex items-center justify-between gap-3 p-2.5 rounded-xl bg-neutral-900/60 hover:bg-neutral-900 border border-neutral-800/80 transition";
 
   return (
-    <div className="detail-backdrop" onClick={onClose}>
-      <div className="detail" onClick={(e) => e.stopPropagation()}>
-        <button className="detail-close" onClick={onClose} aria-label="Close">
-          ✕
-        </button>
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-black/80 backdrop-blur-md"
+      onClick={onClose}
+    >
+      <div
+        className="relative w-full max-w-4xl max-h-[92vh] flex flex-col rounded-3xl bg-neutral-950 border border-neutral-800 shadow-2xl overflow-hidden"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="absolute top-0 right-1/4 -z-10 w-96 h-96 bg-amber-500/10 rounded-full blur-3xl pointer-events-none" />
 
-        <div className="detail-now">
-          <div className="detail-art" style={zone.art ? undefined : coverStyle(zone.track?.title ?? zone.name)}>
-            {zone.art ? <img src={zone.art} alt="" /> : <span className="detail-art-note">♪</span>}
+        {/* Header */}
+        <div className="flex items-center justify-between p-4 sm:p-6 border-b border-neutral-800/80 bg-neutral-900/50">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-10 h-10 rounded-xl bg-amber-500/15 border border-amber-500/30 text-amber-400 flex items-center justify-center shrink-0">
+              <Headphones className="w-5 h-5" />
+            </div>
+            <div className="min-w-0">
+              <h2 className="text-lg font-bold text-white tracking-tight truncate">{zone.name}</h2>
+              <p className="text-xs text-neutral-400 font-medium truncate">
+                {zone.groupedWith.length > 0 ? `Grouped with ${zone.groupedWith.join(" · ")}` : "Sonos zone"}
+              </p>
+            </div>
           </div>
-          <div className="detail-info">
-            <div className="detail-room">
-              {active ? (
-                <span className="eq" aria-label="playing">
-                  <i />
-                  <i />
-                  <i />
-                </span>
-              ) : (
-                <span className={`zone-dot ${zone.playback}`} />
-              )}
-              {zone.name}
-            </div>
-            {zone.track ? (
-              <>
-                <div className="detail-title">{zone.track.title}</div>
-                <div className="detail-artist">{zone.track.artist}</div>
-                {zone.track.album && <div className="detail-album">{zone.track.album}</div>}
-              </>
-            ) : (
-              <div className="detail-artist">Nothing playing</div>
-            )}
-
-            <div className="detail-progress">
-              <span className="progress-track">
-                <span className="progress-fill" style={{ width: `${pct}%` }} />
-              </span>
-              <span className="progress-time">
-                {fmt(zone.elapsed ?? 0)} / {fmt(zone.duration ?? 0)}
-              </span>
-            </div>
-
-            <div className="detail-transport">
-              <button className="tp" onClick={() => onControl("previous")} aria-label="Previous">
-                ⏮
-              </button>
+          <div className="flex items-center gap-2">
+            {zone.groupedWith.length > 0 && groupingSupported && (
               <button
-                className="tp play"
-                onClick={() => onControl(active ? "pause" : "play")}
-                aria-label={active ? "Pause" : "Play"}
+                onClick={() => onControl("ungroup")}
+                className="px-3 py-1.5 rounded-xl text-xs font-semibold border bg-neutral-900 border-neutral-800 text-neutral-300 hover:bg-rose-500/20 hover:border-rose-500/40 hover:text-rose-300 transition"
               >
-                {active ? "⏸" : "▶"}
+                Ungroup
               </button>
-              <button className="tp" onClick={() => onControl("next")} aria-label="Next">
-                ⏭
-              </button>
-            </div>
-
-            <div className="vol">
-              <span className="vol-icon">🔉</span>
-              <div
-                className="vol-track"
-                ref={volRef}
-                onPointerDown={(e) => {
-                  dragging.current = true;
-                  (e.target as HTMLElement).setPointerCapture(e.pointerId);
-                  onControl("set_volume", volFromEvent(e.clientX));
-                }}
-                onPointerMove={(e) => dragging.current && onControl("set_volume", volFromEvent(e.clientX))}
-                onPointerUp={() => (dragging.current = false)}
-              >
-                <span className="vol-fill" style={{ width: `${zone.volume}%` }} />
-                <span className="vol-knob" style={{ left: `${zone.volume}%` }} />
-              </div>
-              <span className="vol-num">{zone.volume}</span>
-            </div>
-          </div>
-        </div>
-
-        {zone.groupedWith.length > 0 && (
-          <div className="detail-grouprow">
-            <span className="zone-group">⛓ {zone.groupedWith.join(" · ")}</span>
-            <button className="ungroup" onClick={() => onControl("ungroup")}>
-              Ungroup
-            </button>
-          </div>
-        )}
-
-        <div className="detail-tabs" role="tablist">
-          {(["queue", "radio", "favorites", "search", "lyrics", "sound"] as Tab[]).map((t) => (
+            )}
             <button
-              key={t}
-              role="tab"
-              className={`detail-tab ${tab === t ? "on" : ""}`}
-              onClick={() => setTab(t)}
+              onClick={onClose}
+              className="p-2 rounded-xl bg-neutral-900 hover:bg-neutral-800 text-neutral-400 hover:text-white border border-neutral-800 hover:border-neutral-700 transition"
+              aria-label="Close"
             >
-              {t === "queue"
-                ? "Up Next"
-                : t === "radio"
-                  ? "Radio"
-                  : t === "favorites"
-                    ? "Favorites"
-                    : t === "search"
-                      ? "Search"
-                      : t === "lyrics"
-                        ? "Lyrics"
-                        : "Sound"}
+              <X className="w-5 h-5" />
             </button>
-          ))}
+          </div>
         </div>
 
-        <div className="detail-tabbody">
-          {tab === "queue" && (
-            <>
-              {queue.length === 0 ? (
-                <div className="detail-empty">Queue is empty — pick a station from the Radio tab.</div>
-              ) : (
-                <ul className="queue">
-                  {queue.map((t) => (
-                    <li key={t.position} className={`queue-row ${t.current ? "current" : ""}`}>
-                      <button className="queue-jump" onClick={() => onQueue("play", t.position)} title={`Play "${t.title || "this track"}" now`}>
-                        <span className="queue-play">{t.current && active ? "▶" : t.position}</span>
-                        <span className="queue-meta">
-                          <span className="queue-title">{t.title || "Unknown"}</span>
-                          <span className="queue-artist">{t.artist}</span>
-                        </span>
-                      </button>
-                      <button className="queue-remove" onClick={() => onQueue("remove", t.position)} aria-label="Remove from queue">
-                        ✕
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </>
-          )}
-
-          {tab === "radio" && (
-            <>
-              {stations.length > 0 && (
-                <>
-                  {(() => {
-                    const byCategory = new Map<string, typeof stations>();
-                    for (const s of stations) {
-                      const cat = s.category || "Other";
-                      if (!byCategory.has(cat)) byCategory.set(cat, []);
-                      byCategory.get(cat)!.push(s);
-                    }
-                    return Array.from(byCategory.entries()).map(([cat, stns]) => (
-                      <div key={cat}>
-                        <div className="detail-subhead">{cat}</div>
-                        <div className="detail-stations">
-                          {stns.map((s) => (
-                            <button key={s.id} className="station-chip" onClick={() => onControl("play_station", undefined, s.id)}>
-                              {s.name}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    ));
-                  })()}
-                  <div className="detail-subhead">Search all stations</div>
-                </>
-              )}
-              <div className="search-row">
-                <input
-                  value={radioQ}
-                  placeholder="Search live radio (e.g. jazz, BBC, KEXP)…"
-                  onChange={(e) => setRadioQ(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && runRadio()}
+        <div className="flex-1 overflow-y-auto grid grid-cols-1 lg:grid-cols-12 divide-y lg:divide-y-0 lg:divide-x divide-neutral-800/80">
+          {/* Now playing */}
+          <div className="lg:col-span-6 p-6 flex flex-col justify-between space-y-6">
+            <div
+              className="relative mx-auto w-56 h-56 sm:w-64 sm:h-64 rounded-2xl overflow-hidden shadow-2xl border border-neutral-700/60 group"
+              style={zone.art ? undefined : coverStyle(track?.title ?? zone.name)}
+            >
+              {zone.art ? (
+                <img
+                  src={zone.art}
+                  alt={track?.title ?? ""}
+                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                 />
-                <button className="search-go" onClick={runRadio} disabled={radioSearching || !radioQ.trim()}>
-                  {radioSearching ? "…" : "Search"}
+              ) : (
+                <div className="w-full h-full flex items-center justify-center text-white/60">
+                  <Music2 className="w-16 h-16" />
+                </div>
+              )}
+              <div className="absolute top-3 left-3 px-2.5 py-1 rounded-lg bg-black/70 backdrop-blur-md text-[11px] font-semibold tracking-wide text-white border border-white/10 uppercase">
+                {zone.playback}
+              </div>
+            </div>
+
+            <div className="space-y-4 text-center">
+              <div>
+                <h3 className="text-xl font-bold text-white tracking-tight">{track?.title || "Nothing playing"}</h3>
+                <p className="text-sm text-neutral-400 font-medium mt-0.5">{track?.artist || "Pick a station or track"}</p>
+                {track?.album && <p className="text-xs text-neutral-500 mt-0.5">{track.album}</p>}
+              </div>
+
+              {/* Progress (read-only: the backend has no seek action) */}
+              <div className="space-y-1">
+                <div className="h-1.5 w-full bg-neutral-800 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-gradient-to-r from-amber-500 to-amber-300 rounded-full transition-all duration-300"
+                    style={{ width: `${pct}%` }}
+                  />
+                </div>
+                <div className="flex justify-between text-xs font-mono text-neutral-500">
+                  <span>{fmtTime(zone.elapsed)}</span>
+                  <span>{fmtTime(zone.duration)}</span>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-center gap-4 pt-1">
+                <button
+                  onClick={() => onControl("previous")}
+                  className="p-2.5 rounded-xl hover:bg-neutral-900 text-neutral-400 hover:text-white transition"
+                  title="Previous track"
+                >
+                  <SkipBack className="w-5 h-5" />
+                </button>
+                <button
+                  onClick={() => onControl(isPlaying ? "pause" : "play")}
+                  className="w-14 h-14 rounded-2xl bg-amber-500 hover:bg-amber-400 text-neutral-950 flex items-center justify-center font-bold shadow-lg shadow-amber-500/30 transition transform hover:scale-105 ring-4 ring-amber-400/20"
+                  aria-label={isPlaying ? "Pause" : "Play"}
+                >
+                  {isPlaying ? <Pause className="w-6 h-6 fill-current" /> : <Play className="w-6 h-6 fill-current translate-x-0.5" />}
+                </button>
+                <button
+                  onClick={() => onControl("next")}
+                  className="p-2.5 rounded-xl hover:bg-neutral-900 text-neutral-400 hover:text-white transition"
+                  title="Next track"
+                >
+                  <SkipForward className="w-5 h-5" />
                 </button>
               </div>
-              {radioErr && <div className="detail-empty error">{radioErr}</div>}
-              {!radioErr && radioResults.length === 0 && radioQ.trim() && (
-                <div className="detail-empty">No stations found for "{radioQ}". Try a different search.</div>
-              )}
-              <ul className="queue">
-                {radioResults.map((r) => (
-                  <li key={r.id} className="queue-row">
-                    <span className="fav-art sm" style={r.favicon ? undefined : coverStyle(r.name)}>
-                      {r.favicon ? <img src={r.favicon} alt="" onError={(e) => (e.currentTarget.style.display = "none")} /> : <span>📻</span>}
-                    </span>
-                    <div className="queue-meta">
-                      <div className="queue-title">{r.name}</div>
-                      <div className="queue-artist">
-                        {[r.country, r.codec, r.bitrate ? `${r.bitrate}k` : null].filter(Boolean).join(" · ")}
+
+              <div className="flex items-center gap-3 pt-2 max-w-sm mx-auto">
+                <span className="p-1 text-neutral-400">
+                  {zone.volume === 0 ? <VolumeX className="w-4 h-4 text-rose-400" /> : <Volume2 className="w-4 h-4" />}
+                </span>
+                <input
+                  type="range"
+                  min="0"
+                  max="100"
+                  value={zone.volume}
+                  onChange={(e) => onControl("set_volume", parseInt(e.target.value, 10))}
+                  className="flex-1 accent-amber-500"
+                  aria-label="Volume"
+                />
+                <span className="text-xs font-mono font-medium text-neutral-300 w-9 text-right">{zone.volume}%</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Tabs */}
+          <div className="lg:col-span-6 flex flex-col h-full min-h-0 bg-neutral-950/40">
+            <div className="flex items-center gap-1.5 p-3 border-b border-neutral-800/80 overflow-x-auto" role="tablist">
+              {tabs.map((t) => (
+                <button
+                  key={t.id}
+                  role="tab"
+                  aria-selected={tab === t.id}
+                  onClick={() => setTab(t.id)}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition shrink-0 ${tabClass(t)}`}
+                >
+                  {t.icon}
+                  {t.label}
+                </button>
+              ))}
+            </div>
+
+            <div className="flex-1 p-4 overflow-y-auto space-y-3">
+              {tab === "queue" &&
+                (queue.length === 0 ? (
+                  <Empty>
+                    <ListMusic className="w-10 h-10 mx-auto mb-2 opacity-40" />
+                    Queue is empty. Pick a station from the Radio tab or search Spotify.
+                  </Empty>
+                ) : (
+                  <div className="space-y-2">
+                    {queue.map((item) => (
+                      <div
+                        key={`${item.position}-${item.title}`}
+                        className={`${rowClass} ${item.current ? "border-amber-500/40 bg-amber-500/5" : ""}`}
+                      >
+                        <button
+                          className="flex items-center gap-3 min-w-0 text-left"
+                          onClick={() => onQueue("play", item.position)}
+                          title={`Play "${item.title || "this track"}" now`}
+                        >
+                          <span className="text-xs font-mono text-neutral-500 w-5 text-center">
+                            {item.current && isPlaying ? <Play className="w-3 h-3 inline fill-amber-400 text-amber-400" /> : item.position}
+                          </span>
+                          <Thumb src={item.art} seed={item.title || String(item.position)} icon={<Music2 className="w-4 h-4" />} />
+                          <span className="min-w-0">
+                            <span className={`block text-sm font-medium truncate transition ${item.current ? "text-amber-300" : "text-white group-hover:text-amber-300"}`}>
+                              {item.title || "Unknown"}
+                            </span>
+                            <span className="block text-xs text-neutral-400 truncate">{item.artist}</span>
+                          </span>
+                        </button>
+                        <button
+                          onClick={() => onQueue("remove", item.position)}
+                          className="p-1.5 rounded-lg hover:bg-rose-500/20 hover:text-rose-400 text-neutral-500 transition shrink-0"
+                          aria-label="Remove from queue"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                ))}
+
+              {tab === "radio" && (
+                <div className="space-y-4">
+                  {stationsByCategory.map(([cat, list]) => (
+                    <div key={cat}>
+                      <div className="text-[10px] uppercase font-bold tracking-wider text-neutral-500 mb-2">{cat}</div>
+                      <div className="flex flex-wrap gap-2">
+                        {list.map((s) => (
+                          <button
+                            key={s.id}
+                            onClick={() => onControl("play_station", undefined, s.id)}
+                            className="px-3 py-1.5 rounded-xl bg-neutral-900/70 hover:bg-neutral-800 border border-neutral-800 hover:border-amber-500/40 text-xs text-neutral-200 hover:text-amber-300 transition"
+                          >
+                            {s.name}
+                          </button>
+                        ))}
                       </div>
                     </div>
-                    <button className="search-play" onClick={() => onPlayRadio(r.url, r.name)}>
-                      Play
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            </>
-          )}
-
-          {tab === "favorites" && (
-            <>
-              {favorites.length === 0 ? (
-                <div className="detail-empty">No saved Sonos favorites found.</div>
-              ) : (
-                <div className="fav-grid">
-                  {favorites.map((f) => (
-                    <button key={f.id} className="fav-card" onClick={() => onPlayFavorite(f.id)} title={`Play ${f.title}`}>
-                      <span className="fav-art" style={f.art ? undefined : coverStyle(f.title)}>
-                        {f.art ? <img src={f.art} alt="" /> : <span>♪</span>}
-                      </span>
-                      <span className="fav-title">{f.title}</span>
-                      {f.description && <span className="fav-desc">{f.description}</span>}
-                    </button>
                   ))}
+
+                  <div>
+                    <div className="text-[10px] uppercase font-bold tracking-wider text-neutral-500 mb-2">Search all stations</div>
+                    <div className="flex gap-2">
+                      <input
+                        value={radioQ}
+                        placeholder="Search live radio (e.g. jazz, BBC, KEXP)…"
+                        onChange={(e) => setRadioQ(e.target.value)}
+                        onKeyDown={(e) => e.key === "Enter" && runRadio()}
+                        className={inputClass}
+                      />
+                      <button className={goClass} onClick={runRadio} disabled={radioSearching || !radioQ.trim()}>
+                        <Search className="w-3.5 h-3.5" />
+                        {radioSearching ? "…" : "Search"}
+                      </button>
+                    </div>
+                  </div>
+                  {radioErr && <Empty error>{radioErr}</Empty>}
+                  {!radioErr && radioSearched && !radioSearching && radioResults.length === 0 && (
+                    <Empty>No stations found. Try a different search.</Empty>
+                  )}
+                  <div className="space-y-2">
+                    {radioResults.map((r) => (
+                      <div key={r.id} className={rowClass}>
+                        <div className="flex items-center gap-3 min-w-0">
+                          <Thumb src={r.favicon} seed={r.name} icon={<Radio className="w-4 h-4" />} />
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium text-white truncate">{r.name}</p>
+                            <p className="text-xs text-neutral-400 truncate">
+                              {[r.country, r.codec, r.bitrate ? `${r.bitrate}k` : null].filter(Boolean).join(" · ")}
+                            </p>
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => onPlayRadio(r.url, r.name)}
+                          className="px-2.5 py-1 rounded-lg bg-amber-500 hover:bg-amber-400 text-neutral-950 font-semibold text-xs transition flex items-center gap-1 shrink-0"
+                        >
+                          <Play className="w-3 h-3 fill-current" /> Play
+                        </button>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               )}
-            </>
-          )}
 
-          {tab === "search" && (
-            <>
-              {!spotifyEnabled ? (
-                <div className="detail-empty">
-                  Spotify search isn't configured. Add SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET to .env.
-                </div>
-              ) : (
-                <>
-                  <div className="search-row">
-                    <input
-                      value={searchQ}
-                      placeholder="Search Spotify for a song or artist…"
-                      onChange={(e) => setSearchQ(e.target.value)}
-                      onKeyDown={(e) => e.key === "Enter" && runSearch()}
-                    />
-                    <button className="search-go" onClick={runSearch} disabled={searching || !searchQ.trim()}>
-                      {searching ? "…" : "Search"}
-                    </button>
-                  </div>
-                  {searchErr && <div className="detail-empty error">{searchErr}</div>}
-                  <ul className="queue">
-                    {results.map((r) => (
-                      <li key={r.id} className="queue-row">
-                        <span className="fav-art sm" style={r.art ? undefined : coverStyle(r.name)}>
-                          {r.art ? <img src={r.art} alt="" /> : <span>♪</span>}
+              {tab === "favorites" &&
+                (favorites.length === 0 ? (
+                  <Empty>No saved Sonos favorites found.</Empty>
+                ) : (
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                    {favorites.map((f) => (
+                      <button
+                        key={f.id}
+                        onClick={() => onPlayFavorite(f.id)}
+                        title={`Play ${f.title}`}
+                        className="group p-2.5 rounded-xl bg-neutral-900/60 hover:bg-neutral-900 border border-neutral-800 hover:border-amber-500/40 text-left transition"
+                      >
+                        <span
+                          className="block aspect-square w-full rounded-lg overflow-hidden mb-2 bg-neutral-800 flex items-center justify-center text-white/70"
+                          style={f.art ? undefined : coverStyle(f.title)}
+                        >
+                          {f.art ? <img src={f.art} alt="" className="w-full h-full object-cover" /> : <Star className="w-6 h-6" />}
                         </span>
-                        <div className="queue-meta">
-                          <div className="queue-title">{r.name}</div>
-                          <div className="queue-artist">{r.artist}</div>
-                        </div>
-                        <div className="search-actions">
-                          <button
-                            className="search-add"
-                            onClick={() => onPlaySpotify(r.uri, `${r.name} — ${r.artist}`, "end")}
-                            title="Add to queue"
-                            aria-label="Add to queue"
-                          >
-                            ＋
-                          </button>
-                          <button className="search-play" onClick={() => onPlaySpotify(r.uri, `${r.name} — ${r.artist}`, "now")}>
-                            Play
-                          </button>
-                        </div>
-                      </li>
+                        <span className="block text-xs font-semibold text-white truncate group-hover:text-amber-300">{f.title}</span>
+                        {f.description && <span className="block text-[11px] text-neutral-500 truncate">{f.description}</span>}
+                      </button>
                     ))}
-                  </ul>
+                  </div>
+                ))}
+
+              {tab === "spotify" &&
+                (!spotifyEnabled ? (
+                  <Empty>Spotify search isn't configured. Add SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET to .env.</Empty>
+                ) : (
+                  <div className="space-y-3">
+                    <div className="flex gap-2">
+                      <input
+                        value={searchQ}
+                        placeholder="Search Spotify for a song or artist…"
+                        onChange={(e) => setSearchQ(e.target.value)}
+                        onKeyDown={(e) => e.key === "Enter" && runSearch()}
+                        className={inputClass.replace("focus:border-amber-500/60", "focus:border-emerald-500/60")}
+                      />
+                      <button className={goClass} onClick={runSearch} disabled={searching || !searchQ.trim()}>
+                        <Search className="w-3.5 h-3.5" />
+                        {searching ? "…" : "Search"}
+                      </button>
+                    </div>
+                    {searchErr && <Empty error>{searchErr}</Empty>}
+                    <div className="space-y-2">
+                      {results.map((r) => (
+                        <div key={r.id} className={rowClass}>
+                          <div className="flex items-center gap-3 min-w-0">
+                            <Thumb src={r.art} seed={r.name} icon={<Music2 className="w-4 h-4" />} />
+                            <div className="min-w-0">
+                              <p className="text-sm font-medium text-white truncate">{r.name}</p>
+                              <p className="text-xs text-neutral-400 truncate">
+                                {r.artist} · {r.album}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <button
+                              onClick={() => onPlaySpotify(r.uri, `${r.name} — ${r.artist}`, "end")}
+                              className="p-1.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-200 transition"
+                              title="Add to queue"
+                              aria-label="Add to queue"
+                            >
+                              <Plus className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              onClick={() => onPlaySpotify(r.uri, `${r.name} — ${r.artist}`, "now")}
+                              className="px-2.5 py-1 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-neutral-950 font-semibold text-xs transition flex items-center gap-1"
+                            >
+                              <Play className="w-3 h-3 fill-current" /> Play
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+
+              {tab === "lyrics" && (
+                <>
+                  {!track ? (
+                    <Empty>Nothing playing.</Empty>
+                  ) : lyricsLoading ? (
+                    <Empty>Finding lyrics…</Empty>
+                  ) : !lyrics ? (
+                    <Empty>No lyrics found for this track.</Empty>
+                  ) : lyrics.synced.length ? (
+                    <ul className="space-y-2 py-4 text-center">
+                      {lyrics.synced.map((l, i) => (
+                        <li
+                          key={i}
+                          ref={i === activeLine ? activeLineRef : undefined}
+                          className={`transition-all ${
+                            i === activeLine
+                              ? "text-lg font-bold text-amber-300"
+                              : i < activeLine
+                                ? "text-sm text-neutral-600"
+                                : "text-sm text-neutral-400"
+                          }`}
+                        >
+                          {l.text || " "}
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <pre className="whitespace-pre-wrap font-sans text-sm text-neutral-300 leading-relaxed">{lyrics.plain}</pre>
+                  )}
+                  {lyrics && <div className="text-[10px] text-neutral-600 text-right font-mono">source: {lyrics.source}</div>}
                 </>
               )}
-            </>
-          )}
 
-          {tab === "lyrics" && (
-            <>
-              {!zone.track ? (
-                <div className="detail-empty">Nothing playing.</div>
-              ) : lyricsLoading ? (
-                <div className="detail-empty">Finding lyrics…</div>
-              ) : !lyrics ? (
-                <div className="detail-empty">No lyrics found for this track.</div>
-              ) : lyrics.synced.length ? (
-                <ul className="lyrics synced">
-                  {lyrics.synced.map((l, i) => (
-                    <li
-                      key={i}
-                      ref={i === activeLine ? activeLineRef : undefined}
-                      className={i === activeLine ? "on" : i < activeLine ? "past" : ""}
-                    >
-                      {l.text}
-                    </li>
+              {tab === "eq" && (
+                <div className="space-y-4">
+                  {(["bass", "treble"] as const).map((field) => (
+                    <div key={field}>
+                      <div className="flex items-center justify-between text-xs text-neutral-300 mb-1.5">
+                        <span className="font-semibold capitalize">{field}</span>
+                        <span className="font-mono">{eq ? (eq[field] > 0 ? `+${eq[field]}` : eq[field]) : "…"}</span>
+                      </div>
+                      <input
+                        type="range"
+                        min={-10}
+                        max={10}
+                        value={eq?.[field] ?? 0}
+                        disabled={!eq}
+                        onChange={(e) => changeEq(field, Number(e.target.value))}
+                        className="w-full accent-amber-500 disabled:opacity-40"
+                        aria-label={field}
+                      />
+                    </div>
                   ))}
-                </ul>
-              ) : (
-                <pre className="lyrics plain">{lyrics.plain}</pre>
+                  {(["night", "loudness"] as const).map((field) => {
+                    const on = Boolean(eq?.[field]);
+                    return (
+                      <button
+                        key={field}
+                        disabled={!eq}
+                        onClick={() => changeEq(field, !on)}
+                        className="w-full flex items-center justify-between p-3 rounded-xl bg-neutral-900/60 border border-neutral-800 hover:border-neutral-700 disabled:opacity-40 transition"
+                        role="switch"
+                        aria-checked={on}
+                      >
+                        <span className="text-xs font-semibold text-white">{field === "night" ? "Night mode" : "Loudness"}</span>
+                        <span className={`relative w-9 h-5 rounded-full transition ${on ? "bg-amber-500" : "bg-neutral-700"}`}>
+                          <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all ${on ? "left-4.5" : "left-0.5"}`} />
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
               )}
-              {lyrics && <div className="lyrics-source">source: {lyrics.source}</div>}
-            </>
-          )}
 
-          {tab === "sound" && (
-            <div className="eq">
-              <div className="eq-slider">
-                <label>Bass<span>{eq ? (eq.bass > 0 ? `+${eq.bass}` : eq.bass) : "…"}</span></label>
-                <input
-                  type="range"
-                  min={-10}
-                  max={10}
-                  value={eq?.bass ?? 0}
-                  onInput={(e) => {
-                    const val = Number((e.target as HTMLInputElement).value);
-                    console.log("[EQ] Bass changed to", val);
-                    changeEq("bass", val);
-                  }}
-                  style={{ cursor: "pointer", width: "100%", touchAction: "none" }}
-                />
-              </div>
-              <div className="eq-slider">
-                <label>Treble<span>{eq ? (eq.treble > 0 ? `+${eq.treble}` : eq.treble) : "…"}</span></label>
-                <input
-                  type="range"
-                  min={-10}
-                  max={10}
-                  value={eq?.treble ?? 0}
-                  onInput={(e) => {
-                    const val = Number((e.target as HTMLInputElement).value);
-                    console.log("[EQ] Treble changed to", val);
-                    changeEq("treble", val);
-                  }}
-                  style={{ cursor: "pointer", width: "100%", touchAction: "none" }}
-                />
-              </div>
-              <button className={`eq-toggle ${eq?.night ? "on" : ""}`} onClick={() => changeEq("night", !eq?.night)}>
-                <span>Night mode</span>
-                <span className="eq-switch" />
-              </button>
-              <button className={`eq-toggle ${eq?.loudness ? "on" : ""}`} onClick={() => changeEq("loudness", !eq?.loudness)}>
-                <span>Loudness</span>
-                <span className="eq-switch" />
-              </button>
+              {tab === "group" && (
+                <div className="space-y-3">
+                  <p className="text-xs text-neutral-400">
+                    Group other zones with <strong className="text-neutral-200">{zone.name}</strong> to play in sync.
+                  </p>
+                  <div className="space-y-2">
+                    {otherZones.map((other) => {
+                      const isGrouped = zone.groupedWith.includes(other.name);
+                      return (
+                        <div key={other.id} className="flex items-center justify-between p-3 rounded-xl bg-neutral-900/60 border border-neutral-800">
+                          <div className="min-w-0">
+                            <p className="text-sm font-semibold text-white truncate">{other.name}</p>
+                            <p className="text-xs text-neutral-400 truncate">
+                              {other.track ? `${other.track.title} · ${other.track.artist}` : other.playback}
+                            </p>
+                          </div>
+                          <button
+                            onClick={() => onToggleGroup(other.id)}
+                            className={`px-3 py-1.5 rounded-xl text-xs font-semibold border transition shrink-0 ${
+                              isGrouped
+                                ? "bg-blue-500/20 border-blue-500/40 text-blue-300 hover:bg-rose-500/20 hover:border-rose-500/40 hover:text-rose-300"
+                                : "bg-neutral-800 hover:bg-neutral-700 border-neutral-700 text-white"
+                            }`}
+                          >
+                            {isGrouped ? "Ungroup" : "+ Group"}
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
-          )}
+          </div>
         </div>
       </div>
     </div>

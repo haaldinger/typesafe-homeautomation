@@ -1,120 +1,143 @@
-import type { CommandResponse, EqState, Favorite, HomeState, QueueTrack, RadioStation, SonosZone, SpotifyResult } from "../shared/types.ts";
+// Client for the Aura Express backend (server/index.ts).
+//
+// Every call goes to the real /api/* endpoints. By default requests are
+// relative ("/api/...") and reach the server through the Vite dev proxy.
+// An optional base URL (Settings) can point at a backend on another host;
+// the server enables CORS, so that works without the proxy.
 
+import type {
+  CommandResponse,
+  EqState,
+  Favorite,
+  HomeState,
+  QueueTrack,
+  RadioStation,
+  SonosZone,
+  SpotifyResult,
+} from "../shared/types.ts";
+
+const BACKEND_URL_KEY = "aura.backend_url";
+
+export function getCustomBackendUrl(): string | null {
+  try {
+    return localStorage.getItem(BACKEND_URL_KEY);
+  } catch {
+    return null;
+  }
+}
+
+export function setCustomBackendUrl(url: string | null): void {
+  try {
+    if (url) localStorage.setItem(BACKEND_URL_KEY, url);
+    else localStorage.removeItem(BACKEND_URL_KEY);
+  } catch {
+    // Storage unavailable (private mode etc.) — fall back to the proxy.
+  }
+}
+
+function apiUrl(path: string): string {
+  const base = (getCustomBackendUrl() ?? "").trim().replace(/\/+$/, "");
+  return `${base}${path}`;
+}
+
+async function errorFrom(res: Response, fallback: string): Promise<Error> {
+  const body = (await res.json().catch(() => ({}))) as { error?: string };
+  return new Error(body.error ?? `${fallback} (${res.status})`);
+}
+
+async function getJson<T>(path: string, what: string): Promise<T> {
+  const res = await fetch(apiUrl(path));
+  if (!res.ok) throw await errorFrom(res, `${what} failed`);
+  return res.json() as Promise<T>;
+}
+
+async function postJson<T>(path: string, body: unknown, what: string): Promise<T> {
+  const res = await fetch(apiUrl(path), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw await errorFrom(res, `${what} failed`);
+  return res.json() as Promise<T>;
+}
+
+/** GET /api/health */
 export interface HealthInfo {
   ok: boolean;
   typesafe: boolean;
   llm: boolean;
   gateway: string;
+  /** "mock" | "live" | "direct" */
   sonos?: string;
   spotify?: boolean;
   spotifyLinked?: boolean;
 }
 
-export async function fetchHealth(): Promise<HealthInfo> {
-  const res = await fetch("/api/health");
-  return res.json();
-}
-
-export async function fetchHome(): Promise<HomeState> {
-  const res = await fetch("/api/home");
-  return res.json();
-}
-
-export async function fetchZones(): Promise<SonosZone[]> {
-  const res = await fetch("/api/zones");
-  return res.json();
-}
-
+/** GET /api/stations */
 export interface StationInfo {
   id: string;
   name: string;
   category?: string;
 }
 
-export async function fetchStations(): Promise<StationInfo[]> {
-  const res = await fetch("/api/stations");
-  return res.json();
-}
+export const fetchHealth = () => getJson<HealthInfo>("/api/health", "health");
+export const fetchHome = () => getJson<HomeState>("/api/home", "home");
+export const fetchZones = () => getJson<SonosZone[]>("/api/zones", "zones");
+export const fetchStations = () => getJson<StationInfo[]>("/api/stations", "stations");
 
-export async function zoneControl(
+/** Direct (non-NL) zone control: play/pause/next/previous/set_volume/play_station/group/ungroup. */
+export function zoneControl(
   zoneId: string,
   action: string,
   value?: number,
   station?: string,
+  members?: string[],
 ): Promise<SonosZone[]> {
-  const res = await fetch("/api/zone-control", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ zoneId, action, value, station }),
-  });
-  if (!res.ok) throw new Error(`zone-control failed (${res.status})`);
-  return res.json();
+  return postJson<SonosZone[]>("/api/zone-control", { zoneId, action, value, station, members }, "zone-control");
 }
 
-export async function fetchQueue(zoneId: string): Promise<QueueTrack[]> {
-  const res = await fetch(`/api/zones/${encodeURIComponent(zoneId)}/queue`);
-  if (!res.ok) throw new Error(`queue fetch failed (${res.status})`);
-  return res.json();
+/** Join `memberIds` to the `leadZoneId` coordinator (zone-control "group"). */
+export function groupZones(leadZoneId: string, memberIds: string[]): Promise<SonosZone[]> {
+  return zoneControl(leadZoneId, "group", undefined, undefined, memberIds);
 }
 
-export async function queueControl(
-  zoneId: string,
-  op: "play" | "remove",
-  position: number,
-): Promise<QueueTrack[]> {
-  const res = await fetch("/api/queue-control", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ zoneId, op, position }),
-  });
-  if (!res.ok) throw new Error(`queue-control failed (${res.status})`);
-  return res.json();
+/** Remove a zone from its group (zone-control "ungroup"). */
+export function ungroupZone(zoneId: string): Promise<SonosZone[]> {
+  return zoneControl(zoneId, "ungroup");
+}
+
+export function fetchQueue(zoneId: string): Promise<QueueTrack[]> {
+  return getJson<QueueTrack[]>(`/api/zones/${encodeURIComponent(zoneId)}/queue`, "queue fetch");
+}
+
+/** `position` is 1-based, matching QueueTrack.position. */
+export function queueControl(zoneId: string, op: "play" | "remove", position: number): Promise<QueueTrack[]> {
+  return postJson<QueueTrack[]>("/api/queue-control", { zoneId, op, position }, "queue-control");
 }
 
 export async function fetchFavorites(): Promise<Favorite[]> {
-  const res = await fetch("/api/favorites");
-  if (!res.ok) return [];
-  return res.json();
-}
-
-export async function playFavorite(zoneId: string, id: string): Promise<SonosZone[]> {
-  const res = await fetch("/api/favorite", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ zoneId, id }),
-  });
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw new Error(body.error ?? `favorite failed (${res.status})`);
+  try {
+    return await getJson<Favorite[]>("/api/favorites", "favorites");
+  } catch {
+    return [];
   }
-  return res.json();
 }
 
-export async function searchSpotify(q: string): Promise<SpotifyResult[]> {
-  const res = await fetch(`/api/spotify/search?q=${encodeURIComponent(q)}`);
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw new Error(body.error ?? `search failed (${res.status})`);
-  }
-  return res.json();
+export function playFavorite(zoneId: string, id: string): Promise<SonosZone[]> {
+  return postJson<SonosZone[]>("/api/favorite", { zoneId, id }, "favorite");
 }
 
-export async function playSpotify(
+export function searchSpotify(q: string): Promise<SpotifyResult[]> {
+  return getJson<SpotifyResult[]>(`/api/spotify/search?q=${encodeURIComponent(q)}`, "search");
+}
+
+export function playSpotify(
   zoneId: string,
   uri: string,
   title: string,
   mode: "now" | "end" = "now",
 ): Promise<SonosZone[]> {
-  const res = await fetch("/api/spotify/play", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ zoneId, uri, title, mode }),
-  });
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw new Error(body.error ?? `play failed (${res.status})`);
-  }
-  return res.json();
+  return postJson<SonosZone[]>("/api/spotify/play", { zoneId, uri, title, mode }, "play");
 }
 
 export interface SyncedLine {
@@ -129,63 +152,35 @@ export interface Lyrics {
 
 export async function fetchLyrics(artist: string, title: string, duration = 0): Promise<Lyrics | null> {
   const res = await fetch(
-    `/api/lyrics?artist=${encodeURIComponent(artist)}&title=${encodeURIComponent(title)}&duration=${duration}`,
+    apiUrl(
+      `/api/lyrics?artist=${encodeURIComponent(artist)}&title=${encodeURIComponent(title)}&duration=${duration}`,
+    ),
   );
   if (!res.ok) return null;
-  return res.json();
+  return res.json() as Promise<Lyrics | null>;
 }
 
-export async function searchRadio(q: string): Promise<RadioStation[]> {
-  const res = await fetch(`/api/radio/search?q=${encodeURIComponent(q)}`);
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw new Error(body.error ?? `radio search failed (${res.status})`);
-  }
-  return res.json();
+export function searchRadio(q: string): Promise<RadioStation[]> {
+  return getJson<RadioStation[]>(`/api/radio/search?q=${encodeURIComponent(q)}`, "radio search");
 }
 
-export async function playRadio(zoneId: string, url: string, name: string): Promise<SonosZone[]> {
-  const res = await fetch("/api/radio/play", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ zoneId, url, name }),
-  });
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw new Error(body.error ?? `radio play failed (${res.status})`);
-  }
-  return res.json();
+export function playRadio(zoneId: string, url: string, name: string): Promise<SonosZone[]> {
+  return postJson<SonosZone[]>("/api/radio/play", { zoneId, url, name }, "radio play");
 }
 
-export async function fetchEq(zoneId: string): Promise<EqState> {
-  const res = await fetch(`/api/zones/${encodeURIComponent(zoneId)}/eq`);
-  if (!res.ok) return { bass: 0, treble: 0, night: false, loudness: true };
-  return res.json();
+export function fetchEq(zoneId: string): Promise<EqState> {
+  return getJson<EqState>(`/api/zones/${encodeURIComponent(zoneId)}/eq`, "eq fetch");
 }
 
-export async function setEq(
+export function setEq(
   zoneId: string,
-  field: "bass" | "treble" | "night" | "loudness",
+  field: keyof EqState,
   value: number | boolean,
 ): Promise<EqState> {
-  const res = await fetch("/api/eq", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ zoneId, field, value }),
-  });
-  if (!res.ok) throw new Error(`eq failed (${res.status})`);
-  return res.json();
+  return postJson<EqState>("/api/eq", { zoneId, field, value }, "eq");
 }
 
-export async function sendCommand(request: string, home: HomeState): Promise<CommandResponse> {
-  const res = await fetch("/api/command", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ request, home }),
-  });
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({ error: `Request failed (${res.status})` }));
-    throw new Error(body.error ?? `Request failed (${res.status})`);
-  }
-  return res.json();
+/** Natural-language command through TypeSafe. `home` lets the simulator gateway use client-side edits. */
+export function sendCommand(request: string, home: HomeState): Promise<CommandResponse> {
+  return postJson<CommandResponse>("/api/command", { request, home }, "Request");
 }
