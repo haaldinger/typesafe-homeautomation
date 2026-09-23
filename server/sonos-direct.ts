@@ -2,6 +2,7 @@
 // discovery (which is often blocked by firewalls / managed networks). Configure
 // with SONOS_HOSTS=ip1,ip2 in .env. Handles transport, volume, and now-playing.
 
+import { readFileSync, writeFileSync } from "node:fs";
 import type { AudioAction, EqState, Favorite, QueueTrack, SonosZone } from "../shared/types.ts";
 import { getSpotifyTracks } from "./spotify.ts";
 
@@ -154,8 +155,8 @@ async function zoneFor(ip: string): Promise<SonosZone> {
       const title = unescapeXml(tag(didl, "dc:title") ?? "");
       const artist = unescapeXml(tag(didl, "dc:creator") ?? tag(didl, "upnp:artist") ?? "");
       const album = unescapeXml(tag(didl, "upnp:album") ?? "");
-      let art = tag(didl, "upnp:albumArtURI");
-      if (art && art.startsWith("/")) art = `http://${ip}:1400${art}`;
+      let art = unescapeXml(tag(didl, "upnp:albumArtURI") ?? "");
+      if (art.startsWith("/")) art = `http://${ip}:1400${art}`;
       if (title) {
         base.track = { title, artist: artist || "", ...(album ? { album } : {}) };
         if (art) base.art = art;
@@ -421,7 +422,25 @@ export async function playFavoriteDirect(zoneId: string, favoriteId: string): Pr
 
 // ---- Spotify playback (reuses the account context of the current track) ------
 
-let spotifyCtx: { sid: string; sn: string; desc: string } | null = null;
+type SpotifyCtx = { sid: string; sn: string; desc: string };
+const CTX_FILE = new URL("../.aura-spotify.json", import.meta.url);
+
+function loadCtx(): SpotifyCtx | null {
+  try {
+    const c = JSON.parse(readFileSync(CTX_FILE, "utf8")) as SpotifyCtx;
+    return c.sid && c.sn ? c : null;
+  } catch {
+    return null;
+  }
+}
+
+let spotifyCtx: SpotifyCtx | null = loadCtx();
+
+// Spotify Connect casts omit the account token; Sonos' standard one is derivable from the service id.
+function defaultDesc(sid: string): string {
+  const svc = Number(sid) * 256 + 7;
+  return `SA_RINCON${svc}_X_#Svc${svc}-0-Token`;
+}
 
 // ---- Radio station name caching (so display shows "Hot 97" not "WQHTAAC_SC") ------
 const lastRadioByZone = new Map<string, { name: string; timestamp: number }>();
@@ -435,7 +454,15 @@ function captureSpotifyContext(trackUri: string | undefined, didl: string): void
   const sid = /sid=(\d+)/.exec(resUri)?.[1] ?? /sid=(\d+)/.exec(trackUri ?? "")?.[1];
   const sn = /sn=(\d+)/.exec(resUri)?.[1] ?? /sn=(\d+)/.exec(trackUri ?? "")?.[1];
   const desc = tag(didl, "desc");
-  if (sid && sn) spotifyCtx = { sid, sn, desc: desc ?? spotifyCtx?.desc ?? "" };
+  if (!sid || !sn) return;
+  const next = { sid, sn, desc: desc || spotifyCtx?.desc || defaultDesc(sid) };
+  if (next.sid === spotifyCtx?.sid && next.sn === spotifyCtx.sn && next.desc === spotifyCtx.desc) return;
+  spotifyCtx = next;
+  try {
+    writeFileSync(CTX_FILE, JSON.stringify(next));
+  } catch {
+    // Persistence is best-effort; the in-memory context still works.
+  }
 }
 
 export function spotifyLinked(): boolean {

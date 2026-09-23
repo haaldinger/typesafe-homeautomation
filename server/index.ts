@@ -246,6 +246,20 @@ app.post("/api/zone-control", async (req, res) => {
       audioAction.name = st.name;
       audioAction.summary = `${zone.name} playing ${st.name}`;
     }
+    if (action === "group") {
+      // Optional list of zone ids to join to this coordinator. Chips carry every
+      // member name (like the resolver's group action) and the summary names them
+      // too, so both the mock and live (node-sonos-http-api) paths can apply it.
+      const memberIds: string[] = Array.isArray(req.body?.members) ? req.body.members.map(String) : [];
+      const members = zones.filter((z) => z.id !== zone.id && memberIds.includes(z.id));
+      if (members.length === 0) {
+        res.status(400).json({ error: "group needs at least one other zone id in 'members'" });
+        return;
+      }
+      const names = [zone.name, ...members.map((m) => m.name)];
+      audioAction.chips = names;
+      audioAction.summary = `${zone.name} grouped with ${members.map((m) => m.name).join(", ")}`;
+    }
     await sonosGateway.apply([audioAction]);
     res.json(await sonosGateway.getZones());
   } catch (err) {
@@ -327,12 +341,14 @@ app.post("/api/command", async (req, res) => {
     }
 
     if (compound) {
-      // 2. LLM pairing: split into atomic requests, evaluate each with TypeSafe.
+      // 2. LLM pairing: split into atomic requests, evaluate each with TypeSafe (in parallel).
       const { commands: parts, usedLlm: llmUsed } = await splitRequest(request);
       usedLlm = llmUsed;
-      for (const part of parts) {
-        const r = parts.length === 1 && part === request ? base : await evaluate(part);
-        const resolution = resolveCommand(part, workingHome, zones, r, questions);
+      const results = await Promise.all(
+        parts.map((part) => evaluate(part)),
+      );
+      for (let i = 0; i < parts.length; i++) {
+        const resolution = resolveCommand(parts[i], workingHome, zones, results[i], questions);
         resolutions.push(resolution);
         workingHome = applyActions(workingHome, resolution.actions);
         allActions.push(...resolution.actions);
@@ -346,10 +362,11 @@ app.post("/api/command", async (req, res) => {
       allAudioActions.push(...resolution.audioActions);
     }
 
-    // Push the decided actions to the real backends (no-op for the simulator).
-    await gateway.commit(allActions);
-    await sonosGateway.apply(allAudioActions);
-    const zonesAfter = allAudioActions.length > 0 ? await sonosGateway.getZones() : zones;
+    // Push the decided actions to the real backends (no-op for the simulator) in parallel.
+    const [, zonesAfter] = await Promise.all([
+      gateway.commit(allActions),
+      allAudioActions.length > 0 ? sonosGateway.apply(allAudioActions).then(() => sonosGateway.getZones()) : Promise.resolve(zones),
+    ]);
 
     const response: CommandResponse = {
       reply: summarizeReply(resolutions, allActions, allAudioActions),
