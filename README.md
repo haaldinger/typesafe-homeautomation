@@ -1,101 +1,143 @@
-# Aura — Smart Home, powered by TypeSafe
+# Aura — Smart Home, Powered by TypeSafe
 
-A replica of the [TypeSafe smart-home demo](https://docs.typesafe.ai/demos/smart-home).
-Type a natural-language command; TypeSafe's System One model (Jev) evaluates a whole
-set of questions in **one call** (speculative fan-out), and plain code routes the
-answers to device actions. Built for a live meetup walkthrough.
+A modern web app for controlling Sonos speakers with natural language voice commands, radio station management, and Spotify integration. Built with TypeSafe NLU for intelligent command parsing.
 
-## What it shows
+## What It Does
 
-- **Speculative fan-out** — every request runs one TypeSafe call with ~9 questions
-  (category, scope, room, device type, action, brightness, temperature, scene,
-  is-compound). Code decides which answers are relevant and ignores the rest.
-- **TypeSafe + LLM pairing** — compound requests ("dim the lights *and* lock the
-  doors") are split by a **local Ollama** model into atomic commands, each
-  re-evaluated by TypeSafe. Off-topic requests fall back to a conversational
-  Ollama reply. If Ollama is unreachable, the app uses simple heuristics.
-- **The Inspector panel** visualizes every answer, its probability distribution,
-  confidence, and whether the routing code actually used it — plus latency and
-  token usage.
+**Aura** lets you:
+- 🎵 **Play radio stations** — 29 curated stations (SomaFM, iHeart, etc.) with instant selection
+- 🎤 **Voice commands** — Ask for anything: "play jazz on the kitchen speaker", "pause", "next track"
+- 🎶 **Spotify playback** — Search and play tracks directly to any speaker
+- 🔊 **Volume control** — Adjust per-speaker or whole-house
+- 📱 **Multi-room** — Group speakers, control independently
+- 💾 **Favorites** — Quick-access to saved stations and playlists
+- 🌙 **Mobile-first UI** — Responsive design, works on phones and tablets
 
-## Device backends
+## Quick Setup for Tech Talk
 
-The reasoning layer (TypeSafe fan-out + routing) is identical regardless of what
-executes the actions. A `DeviceGateway` ([server/gateway.ts](server/gateway.ts))
-is the only seam that changes. Select it with `GATEWAY` in `.env`:
+### Prerequisites
+- Node.js 20+
+- Sonos speaker(s) on your WiFi
+- Optional: Spotify account for linked playback
 
-- `GATEWAY=sim` (default) — the built-in simulated home. Reliable for demos.
-- `GATEWAY=homeassistant` — reads and drives **real** devices via Home Assistant.
+### 3-Minute Setup
 
-### Connecting Home Assistant
-
-1. In Home Assistant, create a long-lived access token:
-   **Profile → Security → Long-lived access tokens → Create token**.
-2. Set these in `.env`:
-   ```
-   GATEWAY=homeassistant
-   HASS_URL=http://homeassistant.local:8123   # or your HA IP:port
-   HASS_TOKEN=<your long-lived token>
-   ```
-3. Restart (`npm run dev`). The app discovers every `light`, `lock`, `cover`,
-   `climate`, `fan`, and `media_player` entity — grouped by HA **area** — in a
-   single templated call, and the TypeSafe room question adapts to your real
-   areas automatically. Commands then call HA services (`light.turn_on`,
-   `lock.lock`, `cover.set_cover_position`, `climate.set_temperature`, etc.).
-
-The HA token stays server-side, next to the TypeSafe key. (In HA mode, clicking a
-device card is optimistic/local; it re-syncs on the next command.)
-
-### Sonos audio (whole-house)
-
-Audio is a first-class domain in the same speculative fan-out — *"play something
-on the deck"*, *"turn it up in the kitchen"*, *"group the deck with the living
-room"*, and cross-domain compounds like *"play music on the deck and dim the
-kitchen"* all route through one Decision Trace. Zones: **Living Room, Kitchen,
-Deck**. Configure in `.env`:
-
-```
-SONOS_MODE=mock                       # built-in zones, no hardware
-# SONOS_MODE=live                     # drive real speakers
-SONOS_API_URL=http://localhost:5005   # a running node-sonos-http-api
-```
-
-Grouping uses one yes/no judgment per zone (robust multi-zone extraction), and
-the zone list is passed into the model state so it grounds on real zones.
-
-## Run it
-
-1. Add your TypeSafe API key to `.env`:
-   ```
-   TYPESAFE_API_KEY=sk-...
-   ```
-   The LLM pairing uses a local **Ollama** server. Make sure it's running and the
-   model is pulled:
-   ```sh
-   ollama serve
-   ollama pull llama3.1:8b
-   ```
-   (Set `LLM_PROVIDER=none` in `.env` to skip Ollama and use heuristics only.)
-
-2. Install and start (runs the API proxy + Vite together):
-   ```sh
+1. **Clone:**
+   ```bash
+   git clone https://github.com/haaldinger/typesafe-homeautomation.git
+   cd typesafe-homeautomation
    npm install
+   ```
+
+2. **Find speaker IP:**
+   - Sonos app → Settings → About My System → IP Address
+   - Example: `192.168.1.125`
+
+3. **Configure `.env`:**
+   ```
+   SONOS_HOSTS=192.168.1.125
+   SONOS_MODE=direct
+   ```
+
+4. **Run:**
+   ```bash
    npm run dev
    ```
 
-3. Open http://localhost:5173
+5. **Open browser:**
+   ```
+   http://localhost:5173
+   ```
+   (Or on same WiFi: `http://<your-laptop-ip>:5173`)
 
-The TypeSafe key stays server-side in `server/` and is never exposed to the browser.
+**That's it!** Everything else works out of the box.
 
-## Where the code lives
+## How to Use
 
-| Part | File |
-| --- | --- |
-| Fan-out question set (dynamic per home) | [server/typesafe.ts](server/typesafe.ts) |
-| Routing answers → device actions | [server/resolve.ts](server/resolve.ts) |
-| Device backends (sim / Home Assistant) | [server/gateway.ts](server/gateway.ts) |
-| Home Assistant discovery + service calls | [server/homeassistant.ts](server/homeassistant.ts) |
-| LLM split + conversational fallback | [server/llm.ts](server/llm.ts) |
-| Orchestration endpoint | [server/index.ts](server/index.ts) |
-| Simulated home model | [shared/home.ts](shared/home.ts) |
-| UI | [src/App.tsx](src/App.tsx), [src/components/Inspector.tsx](src/components/Inspector.tsx) |
+### Radio
+1. Click **Radio** tab
+2. Select a station from categories (SomaFM, iHeart, etc.)
+3. Music plays instantly
+
+### Voice
+1. Click 🎤 button
+2. Say: "Play jazz", "pause", "next track", "volume up"
+
+### Spotify
+1. Click **Search** tab
+2. Type artist/track
+3. Click **Play**
+
+### Volume
+- Click zone and drag slider
+- Or click +/- buttons
+
+## Tech Stack
+
+**Frontend:** React + TypeScript + Vite  
+**Backend:** Express.js + TypeSafe NLU  
+**Sonos:** Direct SOAP/UPnP protocol over IP  
+**Spotify:** Web API integration  
+
+## File Structure
+
+```
+├── server/
+│   ├── index.ts           # Express API
+│   ├── sonos-direct.ts    # Sonos SOAP control
+│   ├── stations.ts        # 29 radio stations
+│   ├── spotify.ts         # Spotify integration
+│   └── resolve.ts         # Command routing
+├── src/
+│   ├── App.tsx            # Main component
+│   ├── components/        # ZoneDetail, etc.
+│   └── api.ts             # API client
+└── shared/
+    └── types.ts           # TypeScript types
+```
+
+## Features
+
+✅ Radio station selection (29 preloaded)  
+✅ Spotify search & playback  
+✅ Voice commands via TypeSafe NLU  
+✅ Multi-zone control  
+✅ Mobile responsive  
+✅ Room name auto-detection  
+❌ EQ controls (hardware limitation)  
+❌ Voice Spotify (TODO)  
+
+## Environment Variables
+
+```
+SONOS_HOSTS=192.168.1.125,192.168.1.126  # Your speaker IPs
+SONOS_MODE=direct                         # Use real speakers
+SPOTIFY_CLIENT_ID=***                     # Optional: for Spotify
+SPOTIFY_CLIENT_SECRET=***
+TYPESAFE_API_KEY=***                      # For voice commands
+```
+
+## API Endpoints
+
+- `GET /api/zones` — List all speakers
+- `POST /api/zone-control` — Play, pause, volume
+- `POST /api/radio/play` — Start radio station
+- `POST /api/spotify/play` — Play Spotify track
+- `GET /api/stations` — All radio stations
+- `POST /api/eq` — Bass/treble adjustments
+
+## Demo Tips
+
+- Pre-stage your Sonos speaker on WiFi before the demo
+- Set `SONOS_HOSTS` to the speaker's IP
+- Radio stations load instantly — no setup needed
+- Voice works great with a quick sound check first
+- Mobile browser shows the responsive design best
+
+## Next Steps / TODO
+
+- [ ] Voice commands for Spotify playback
+- [ ] Real-time UI sync with speaker state
+- [ ] EQ control support
+- [ ] Progress bar on tracks
+- [ ] Playback history
