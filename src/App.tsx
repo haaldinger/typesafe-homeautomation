@@ -501,7 +501,6 @@ export function App() {
               queue={queue}
               stations={stations}
               spotifyEnabled={Boolean(health?.spotify)}
-              spotifyLinked={Boolean(health?.spotifyLinked)}
               onClose={() => setDetailZoneId(null)}
               onControl={(action, value, station) => onZoneControl(dz.id, action, value, station)}
               onQueue={onQueueControl}

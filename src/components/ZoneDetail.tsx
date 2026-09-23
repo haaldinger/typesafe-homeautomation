@@ -26,7 +26,6 @@ export function ZoneDetail({
   queue,
   stations,
   spotifyEnabled,
-  spotifyLinked,
   onClose,
   onControl,
   onQueue,
@@ -38,7 +37,6 @@ export function ZoneDetail({
   queue: QueueTrack[];
   stations: { id: string; name: string; category?: string }[];
   spotifyEnabled: boolean;
-  spotifyLinked: boolean;
   onClose: () => void;
   onControl: (action: string, value?: number, station?: string) => void;
   onQueue: (op: "play" | "remove", position: number) => void;
@@ -389,17 +387,6 @@ export function ZoneDetail({
               {!spotifyEnabled ? (
                 <div className="detail-empty">
                   Spotify search isn't configured. Add SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET to .env.
-                </div>
-              ) : !spotifyLinked ? (
-                <div className="detail-empty warning">
-                  ⚠️ Spotify isn't linked to your Sonos system. To play tracks:
-                  <ol style={{ marginTop: "0.75rem", paddingLeft: "1.25rem" }}>
-                    <li>Open the Sonos app</li>
-                    <li>Go to Settings → Services & Voice</li>
-                    <li>Add Spotify and sign in</li>
-                    <li>Play any song once from the app</li>
-                  </ol>
-                  After linking, you can search and play tracks here.
                 </div>
               ) : (
                 <>
