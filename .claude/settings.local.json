@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm run *)",
+      "Bash(curl -s http://localhost:8787/api/health)",
+      "Bash(curl -s http://localhost:5173/)",
+      "Bash(ls -la /Users/heath.aldinger/Documents/Development/WallPanel-App | head -20)",
+      "Read(//Users/heath.aldinger/Documents/Development/WallPanel-App/**)",
+      "Bash(npx tsc *)",
+      "Bash(curl -s http://localhost:8787/api/stations)",
+      "Bash(cat)",
+      "Bash(chmod +x /tmp/test-stations.sh)",
+      "Bash(/tmp/test-stations.sh)",
+      "Bash(curl -s http://localhost:8787/api/zones)",
+      "Bash(xargs grep -l \"SetBass\\\\|SetTreble\\\\|eq\\\\|bass\\\\|treble\")",
+      "Bash(xargs ls -1)",
+      "Bash(chmod +x /tmp/test-eq.sh)",
+      "Read(//tmp/**)",
+      "Bash(npm uninstall *)",
+      "Bash(npm search *)"
+    ]
+  }
+}
