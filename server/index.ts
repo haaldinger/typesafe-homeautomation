@@ -3,7 +3,7 @@ import express from "express";
 import cors from "cors";
 import type { AudioAction, CommandResolution, CommandResponse, DeviceAction, PatternAction, PatternSpec } from "../shared/types.ts";
 import { buildQuestions, homeSummary, systemOne } from "./typesafe.ts";
-import { applyActions, categoryOf, isCompound, resolveCommand, treatStopAsLightCommand } from "./resolve.ts";
+import { applyActions, applyOverrides, categoryOf, isCompound, resolveCommand, treatStopAsLightCommand } from "./resolve.ts";
 import { conversationalReply, llmEnabled, splitRequest } from "./llm.ts";
 import { getGateway } from "./gateway.ts";
 import { resetMockZones, sonosGateway } from "./sonos.ts";
@@ -361,6 +361,10 @@ function summarizeReply(
 app.post("/api/command", async (req, res) => {
   const started = Date.now();
   const request: string = (req.body?.request ?? "").toString().trim();
+  // Answers the user picked in a follow-up ("Kitchen or Living room?").
+  const overrides: Record<string, string> = Object.fromEntries(
+    Object.entries(req.body?.overrides ?? {}).filter((e): e is [string, string] => typeof e[1] === "string"),
+  );
 
   if (!request) {
     res.status(400).json({ error: "Missing 'request'." });
@@ -395,8 +399,10 @@ app.post("/api/command", async (req, res) => {
     // 1. Speculative fan-out: one call, every question.
     const base = await evaluate(request);
     treatStopAsLightCommand(base, listPatterns().length > 0);
+    applyOverrides(base, overrides);
     const category = categoryOf(base);
-    const compound = isCompound(base);
+    // A follow-up answer applies to the whole request, so don't split it again.
+    const compound = Object.keys(overrides).length === 0 && isCompound(base);
 
     const resolutions: CommandResolution[] = [];
     let workingHome = home;
@@ -431,7 +437,7 @@ app.post("/api/command", async (req, res) => {
         parts.map((part) => evaluate(part)),
       );
       for (let i = 0; i < parts.length; i++) {
-        const resolution = resolveCommand(parts[i], workingHome, zones, results[i], questions);
+        const resolution = resolveCommand(parts[i], workingHome, zones, results[i], questions, false);
         resolutions.push(resolution);
         workingHome = applyActions(workingHome, resolution.actions);
         allActions.push(...resolution.actions);
@@ -480,6 +486,7 @@ app.post("/api/command", async (req, res) => {
       reply: [summarizeReply(resolutions, allActions, allAudioActions, allPatternActions), ...patternNotes].join(" "),
       patternActions: allPatternActions,
       patterns: listPatterns(),
+      clarify: resolutions.find((r) => r.clarify)?.clarify,
       request,
       category,
       isCompound: compound,

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import type {
+  ClarifyOption,
   CommandResponse,
   Device,
   DeviceAction,
@@ -159,7 +160,13 @@ export default function App() {
   const [listening, setListening] = useState(false);
   const recogRef = useRef<{ stop: () => void } | null>(null);
   const [result, setResult] = useState<CommandResponse | null>(null);
-  const [reply, setReply] = useState<{ text: string; error?: boolean; meta?: string } | null>(null);
+  const [reply, setReply] = useState<{
+    text: string;
+    error?: boolean;
+    meta?: string;
+    /** A follow-up question: the original request and the answers to pick from. */
+    clarify?: { request: string; options: ClarifyOption[] };
+  } | null>(null);
   const [flashing, setFlashing] = useState<Set<string>>(new Set());
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -529,12 +536,20 @@ export default function App() {
     rec.start();
   }
 
-  async function submit(text: string) {
+  async function submit(text: string, overrides?: Record<string, string>) {
     if (!home || !text.trim() || loading) return;
+    // Answering a follow-up by typing or saying one of the options ("the kitchen").
+    const pending = reply?.clarify;
+    const said = text.trim().toLowerCase();
+    // Short replies only, so a new full command isn't mistaken for an answer.
+    if (pending && !overrides && said.split(/\s+/).length <= 3) {
+      const match = pending.options.find((o) => said.includes(o.label.toLowerCase()) || o.label.toLowerCase().includes(said));
+      if (match) return submit(pending.request, match.overrides);
+    }
     setLoading(true);
     setReply(null);
     try {
-      const res = await sendCommand(text.trim(), home);
+      const res = await sendCommand(text.trim(), home, overrides);
       setResult(res);
       if (res.patterns) setPatterns(res.patterns);
       const flashIds = res.actions.map((a) => a.deviceId);
@@ -549,7 +564,11 @@ export default function App() {
         `${res.latencyMs}ms`,
         `${res.usage.inputTokens + res.usage.outputTokens} tokens`,
       ].join(" · ");
-      setReply({ text: res.reply, meta });
+      setReply({
+        text: res.reply,
+        meta,
+        ...(res.clarify ? { clarify: { request: text.trim(), options: res.clarify.options } } : {}),
+      });
       setInput("");
     } catch (err) {
       showError(err, "Something went wrong.");
@@ -838,6 +857,20 @@ export default function App() {
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium leading-relaxed">{reply.text}</p>
+                    {reply.clarify && (
+                      <div className="flex flex-wrap gap-2 mt-3">
+                        {reply.clarify.options.map((o) => (
+                          <button
+                            key={o.label}
+                            onClick={() => submit(reply.clarify!.request, o.overrides)}
+                            disabled={loading}
+                            className="px-3.5 py-1.5 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 text-sm font-semibold text-amber-200 capitalize transition disabled:opacity-50"
+                          >
+                            {o.label}
+                          </button>
+                        ))}
+                      </div>
+                    )}
                     {reply.meta && (
                       <div className="flex items-center gap-1.5 mt-1.5 text-xs text-neutral-400 font-mono">
                         <Clock className="w-3 h-3" />

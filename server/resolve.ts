@@ -1,6 +1,8 @@
 import type {
   AnswerTrace,
   AudioAction,
+  Clarification,
+  ClarifyOption,
   CommandResolution,
   Device,
   DeviceAction,
@@ -72,9 +74,17 @@ function targetDevices(
 }
 
 /** The color/white patch the model asked for, limited to what the light supports. */
-function colorPatch(device: Device, r: SystemOneResponse): DevicePatch | null {
+function colorPatch(device: Device, r: SystemOneResponse, needColor = false): DevicePatch | null {
   const answer = r.answers.light_color as ChoiceAnswer | undefined;
-  const c = answer ? LIGHT_COLORS[answer.choice] : undefined;
+  let pick = answer?.choice;
+  // "Set the lights to something relaxing": the model hedged on "none", but a color change needs one.
+  if (needColor && answer && pick === "none") {
+    const best = Object.entries(answer.probabilities)
+      .filter(([k]) => k !== "none")
+      .sort((x, y) => y[1] - x[1])[0];
+    if (best && best[1] >= RUNNER_UP) pick = best[0];
+  }
+  const c = pick ? LIGHT_COLORS[pick] : undefined;
   if (!c) return null;
   if ("hex" in c) return device.supportsColor === false ? null : { on: true, color: c.hex, colorMode: "color", effect: "none" };
   return device.supportsWhite === false ? null : { on: true, kelvin: c.kelvin, colorMode: "white", effect: "none" };
@@ -99,7 +109,7 @@ function lightPatch(device: Device, action: string, r: SystemOneResponse): Devic
       return { on: level > 0, level };
     }
     case "set_color":
-      return colorPatch(device, r);
+      return colorPatch(device, r, true);
     case "party_mode":
       return device.supportsColor === false ? null : { on: true, effect: "colorloop" };
     case "stop_effect":
@@ -393,11 +403,38 @@ export function resolveCommand(
   zones: SonosZone[],
   r: SystemOneResponse,
   questions: Record<string, Question>,
+  allowClarify = true,
 ): CommandResolution {
   const category = choice(r, "category").choice;
   const used = new Set<string>(["category"]);
+  const ask = (
+    id: string,
+    question: string,
+    label: (choiceId: string) => ClarifyOption | null,
+    ignore: string[] = [],
+  ): CommandResolution | null => {
+    if (!allowClarify) return null;
+    const options = uncertainOptions(r, id, label, ignore);
+    if (!options) return null;
+    used.add(id);
+    const words = options.map((o) => o.label);
+    const clarify: Clarification = {
+      question: `${question} — ${words.slice(0, -1).join(", ")} or ${words[words.length - 1]}?`,
+      questionId: id,
+      options,
+    };
+    return { request, category, actions: [], audioActions: [], answers: buildTraces(r, used, questions), note: clarify.question, clarify };
+  };
 
   if (category === "audio_command") {
+    if (zones.length > 1 && choice(r, "audio_action").choice !== "none") {
+      const q = ask("audio_zone", "Which speaker", (id) => {
+        if (id === "whole_house") return { label: "everywhere", overrides: { audio_zone: id } };
+        const z = zones.find((zz) => zz.id === id);
+        return z ? { label: z.name, overrides: { audio_zone: id } } : null;
+      });
+      if (q) return q;
+    }
     const audioActions = resolveAudio(zones, r, used);
     return {
       request,
@@ -414,6 +451,12 @@ export function resolveCommand(
   // Saved lighting scenes ("set the living room to Relax") can come through as a
   // scene or as a device command.
   if (category === "scene" || category === "device_command") {
+    const sceneNames = new Map((home.scenes ?? []).map((s) => [sceneKey(s.name), s.name]));
+    const q = ask("light_scene", "Which scene", (id) => {
+      const name = sceneNames.get(id);
+      return name ? { label: name, overrides: { light_scene: id } } : null;
+    });
+    if (q) return q;
     const sceneAction = resolveLightScene(home, r, used, roomLabel);
     if (sceneAction) {
       return {
@@ -471,6 +514,28 @@ export function resolveCommand(
   if (action === "set_level" && deviceType === "light") used.add("brightness_level");
   if (deviceType === "thermostat") used.add("temperature_direction");
   if (deviceType === "light" || action === "set_color") used.add("light_color");
+
+  // Unsure where or what color? Ask rather than change the wrong thing.
+  if (action !== "none" && scope !== "whole_house") {
+    const q = ask("room", "Which room", (id): ClarifyOption | null =>
+      id === "none"
+        ? { label: "everywhere", overrides: { room: "none", scope: "whole_house" } }
+        : home.rooms.some((rm) => rm.id === id)
+          ? { label: roomLabel(id), overrides: { room: id } }
+          : null,
+    );
+    if (q) return q;
+  }
+  if (action === "set_color") {
+    // Changing color with "no color" isn't an option, so weigh only the real colors.
+    const q = ask(
+      "light_color",
+      "Which color",
+      (id) => (LIGHT_COLORS[id] ? { label: LIGHT_COLORS[id].label, overrides: { light_color: id } } : null),
+      ["none"],
+    );
+    if (q) return q;
+  }
 
   const pattern = resolvePattern(r, action, room, roomLabel, used);
   if (pattern) {
@@ -599,6 +664,42 @@ export function applyActions(home: HomeState, actions: DeviceAction[]): HomeStat
     ...home,
     devices: home.devices.map((d) => (byId.has(d.id) ? { ...d, ...byId.get(d.id) } : d)),
   };
+}
+
+/** Ask when the top answer is below this probability... */
+const ASK_BELOW = 0.6;
+/** ...and a real alternative is at least this likely. */
+const RUNNER_UP = 0.2;
+
+/** Options to offer when a choice answer is genuinely split, else null. */
+function uncertainOptions(
+  r: SystemOneResponse,
+  id: string,
+  label: (choiceId: string) => ClarifyOption | null,
+  ignore: string[] = [],
+): ClarifyOption[] | null {
+  const a = r.answers[id];
+  if (!a || a.type !== "choice") return null;
+  const kept = Object.entries(a.probabilities).filter(([k]) => !ignore.includes(k));
+  const total = kept.reduce((s, [, p]) => s + p, 0) || 1;
+  const ranked = kept.map(([k, p]): [string, number] => [k, p / total]).sort((x, y) => y[1] - x[1]);
+  if (!ranked.length || ranked[0][1] >= ASK_BELOW) return null;
+  const options = ranked
+    .filter(([, p], i) => i === 0 || p >= RUNNER_UP)
+    .slice(0, 3)
+    .map(([choiceId]) => label(choiceId))
+    .filter((o): o is ClarifyOption => o !== null);
+  return options.length >= 2 ? options : null;
+}
+
+/** Force answers the user picked in a follow-up, so the request resolves their way. */
+export function applyOverrides(r: SystemOneResponse, overrides: Record<string, string>): void {
+  for (const [id, value] of Object.entries(overrides)) {
+    const a = r.answers[id];
+    if (!a || a.type !== "choice") continue;
+    const probabilities = Object.fromEntries(Object.keys(a.probabilities).map((k) => [k, k === value ? 1 : 0]));
+    r.answers[id] = { ...a, choice: value, confidence: 1, probabilities: { ...probabilities, [value]: 1 } };
+  }
 }
 
 /** A bare "stop" while a light pattern is running is a light command, not chit-chat. */

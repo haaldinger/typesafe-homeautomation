@@ -206,6 +206,21 @@ export interface AnswerTrace {
   distribution: DistributionEntry[];
 }
 
+/** One answer the user can pick when the assistant asks a follow-up. */
+export interface ClarifyOption {
+  label: string;
+  /** TypeSafe answers to force (question id -> choice) when re-running the request. */
+  overrides: Record<string, string>;
+}
+
+/** Asked instead of acting when a deciding answer was too uncertain. */
+export interface Clarification {
+  question: string;
+  /** The TypeSafe question that was uncertain. */
+  questionId: string;
+  options: ClarifyOption[];
+}
+
 /** Result of interpreting one atomic sub-request. */
 export interface CommandResolution {
   request: string;
@@ -215,6 +230,7 @@ export interface CommandResolution {
   patternActions?: PatternAction[];
   answers: AnswerTrace[];
   note?: string;
+  clarify?: Clarification;
 }
 
 export interface CommandResponse {
@@ -237,4 +253,6 @@ export interface CommandResponse {
   patternActions?: PatternAction[];
   /** Patterns running after this command. */
   patterns?: RunningPattern[];
+  /** Present when the assistant needs the user to pick before acting. */
+  clarify?: Clarification;
 }

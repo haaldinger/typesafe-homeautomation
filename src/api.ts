@@ -198,6 +198,7 @@ export function setEq(
 }
 
 /** Natural-language command through TypeSafe. `home` lets the simulator gateway use client-side edits. */
-export function sendCommand(request: string, home: HomeState): Promise<CommandResponse> {
-  return postJson<CommandResponse>("/api/command", { request, home }, "Request");
+/** `overrides` carries the user's pick from a follow-up question (question id -> choice). */
+export function sendCommand(request: string, home: HomeState, overrides?: Record<string, string>): Promise<CommandResponse> {
+  return postJson<CommandResponse>("/api/command", { request, home, overrides }, "Request");
 }
