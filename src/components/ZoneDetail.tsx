@@ -380,22 +380,40 @@ export function ZoneDetail({
               </div>
 
               {lightRooms.length > 0 && (
-                <div className="flex items-center justify-center gap-2 pt-1 text-xs text-neutral-400">
-                  <Lightbulb className={`w-4 h-4 ${lightSyncRoom ? "text-fuchsia-400" : ""}`} />
-                  <label htmlFor="light-sync">Lights follow the music in</label>
-                  <select
-                    id="light-sync"
-                    value={lightSyncRoom ?? ""}
-                    onChange={(e) => onLightSync(e.target.value || null)}
-                    className="bg-neutral-900 border border-neutral-700/60 rounded-lg px-2 py-1 text-neutral-200 focus:outline-none focus:border-fuchsia-500/60"
-                  >
-                    <option value="">Off</option>
-                    {lightRooms.map((r) => (
-                      <option key={r.id} value={r.id}>
-                        {r.name}
-                      </option>
-                    ))}
-                  </select>
+                <div className="pt-2 space-y-2">
+                  <div className="flex items-center justify-center gap-1.5 text-xs text-neutral-400">
+                    <Lightbulb className={`w-4 h-4 ${lightSyncRoom ? "text-fuchsia-400" : ""}`} />
+                    <span id="light-sync-label">Lights follow the music</span>
+                  </div>
+                  <div className="flex flex-wrap justify-center gap-1.5" role="radiogroup" aria-labelledby="light-sync-label">
+                    {[{ id: "", name: "Off" }, ...lightRooms].map((r) => {
+                      const active = (lightSyncRoom ?? "") === r.id;
+                      return (
+                        <button
+                          key={r.id || "off"}
+                          role="radio"
+                          aria-checked={active}
+                          onClick={() => onLightSync(r.id || null)}
+                          className={`px-3 py-1 rounded-lg border text-xs font-semibold transition ${
+                            active
+                              ? r.id
+                                ? "bg-fuchsia-500/20 border-fuchsia-500/50 text-fuchsia-200"
+                                : "bg-neutral-800 border-neutral-600 text-white"
+                              : "bg-neutral-900 border-neutral-800 text-neutral-400 hover:text-neutral-200 hover:border-neutral-700"
+                          }`}
+                        >
+                          {r.name}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {lightSyncRoom && (
+                    <p className="text-[11px] text-neutral-500">
+                      {zone.art
+                        ? "Recolors the lights that are on whenever the song changes."
+                        : "Waiting for a song with album art — radio streams don't have any."}
+                    </p>
+                  )}
                 </div>
               )}
             </div>

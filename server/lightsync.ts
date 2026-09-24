@@ -4,8 +4,9 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import jpeg from "jpeg-js";
 import type { DeviceAction, SonosZone } from "../shared/types.ts";
-import { rgbToHex } from "../shared/color.ts";
+import { hexToRgb, rgbToHex } from "../shared/color.ts";
 import type { DeviceGateway } from "./gateway.ts";
+import { listPatterns } from "./patterns.ts";
 
 const FILE = new URL("../.aura-lightsync.json", import.meta.url);
 
@@ -22,6 +23,8 @@ function load(): Mappings {
 
 let mappings: Mappings = load();
 const lastArt = new Map<string, string>();
+/** zoneId -> the current song's colors and how far the drift has rotated them. */
+const palettes = new Map<string, { colors: string[]; step: number }>();
 
 export function getLightSync(): Mappings {
   return mappings;
@@ -33,6 +36,7 @@ export function setLightSync(zoneId: string, roomId: string | null): Mappings {
   else delete next[zoneId];
   mappings = next;
   lastArt.delete(zoneId);
+  palettes.delete(zoneId);
   try {
     writeFileSync(FILE, JSON.stringify(mappings));
   } catch {
@@ -99,21 +103,31 @@ export async function paletteFromArt(url: string): Promise<string[]> {
   return picked.map(([h, s]) => hsvToHex(h, Math.max(s, 0.65), 1));
 }
 
-async function syncZone(gateway: DeviceGateway, zone: SonosZone, roomId: string): Promise<void> {
-  const colors = await paletteFromArt(zone.art!).catch(() => []);
-  if (!colors.length) return;
+/** Muted covers yield one color; add neighboring shades so the drift has somewhere to go. */
+function expandPalette(colors: string[]): string[] {
+  if (colors.length !== 1) return colors;
+  const [h, s] = rgbToHsv(...hexToRgb(colors[0]));
+  return [colors[0], hsvToHex((h + 35) % 360, s, 1), hsvToHex((h + 325) % 360, s, 1)];
+}
+
+/** Paint the room's lit color lights, rotating the palette by `step`. */
+async function paint(gateway: DeviceGateway, roomId: string, colors: string[], step: number, transitionMs: number): Promise<void> {
   const home = await gateway.loadState();
   // Only recolor lights that are on, so a synced room never switches itself on.
-  const lights = home.devices.filter((d) => d.type === "light" && d.room === roomId && d.on && d.supportsColor !== false);
+  const lights = home.devices.filter(
+    (d) => d.type === "light" && d.room === roomId && d.on && d.available !== false && d.supportsColor !== false,
+  );
   const actions: DeviceAction[] = lights.map((d, i) => ({
     deviceId: d.id,
     deviceName: d.name,
     room: d.room,
     summary: `${d.name} matched to the music`,
-    patch: { color: colors[i % colors.length], colorMode: "color", effect: "none" },
+    patch: { color: colors[(i + step) % colors.length], colorMode: "color", effect: "none", transitionMs },
   }));
   if (actions.length) await gateway.commit(actions);
 }
+
+const TICK_MS = 4000;
 
 export function startLightSync(gateway: DeviceGateway, sonos: { getZones(): Promise<SonosZone[]> }): void {
   let busy = false;
@@ -122,16 +136,37 @@ export function startLightSync(gateway: DeviceGateway, sonos: { getZones(): Prom
     busy = true;
     try {
       const zones = await sonos.getZones();
+      const patternRooms = new Set(listPatterns().map((p) => p.room));
       for (const [zoneId, roomId] of Object.entries(mappings)) {
         const zone = zones.find((z) => z.id === zoneId);
-        if (!zone || zone.playback !== "playing" || !zone.art || lastArt.get(zoneId) === zone.art) continue;
-        lastArt.set(zoneId, zone.art);
-        await syncZone(gateway, zone, roomId).catch((e) => console.error("[lightsync]", e instanceof Error ? e.message : e));
+        // Drift only while the music plays, and never over a running light pattern.
+        if (!zone || zone.playback !== "playing" || patternRooms.has(roomId) || patternRooms.has("all")) continue;
+        try {
+          if (zone.art && lastArt.get(zoneId) !== zone.art) {
+            // New song: snap to the new cover's colors.
+            lastArt.set(zoneId, zone.art);
+            const colors = expandPalette(await paletteFromArt(zone.art).catch(() => []));
+            if (!colors.length) {
+              palettes.delete(zoneId);
+              continue;
+            }
+            palettes.set(zoneId, { colors, step: 0 });
+            await paint(gateway, roomId, colors, 0, 1000);
+          } else {
+            // Same song: slowly drift each light to the next color.
+            const p = palettes.get(zoneId);
+            if (!p) continue;
+            p.step += 1;
+            await paint(gateway, roomId, p.colors, p.step, TICK_MS - 500);
+          }
+        } catch (e) {
+          console.error("[lightsync]", e instanceof Error ? e.message : e);
+        }
       }
     } catch {
       // Speaker or bridge briefly unreachable; try again next tick.
     } finally {
       busy = false;
     }
-  }, 4000);
+  }, TICK_MS);
 }

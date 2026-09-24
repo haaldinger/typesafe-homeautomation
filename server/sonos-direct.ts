@@ -161,17 +161,13 @@ async function zoneFor(ip: string): Promise<SonosZone> {
         base.track = { title, artist: artist || "", ...(album ? { album } : {}) };
         if (art) base.art = art;
       }
-      // For radio stations, use cached name if title looks like URL params or stream file
+      // Radio streams often report a URL fragment as the title; show the station name instead.
+      // The name stays until something with a real title plays.
       const cachedRadio = lastRadioByZone.get(base.id);
       const isUglyUrl = title && (/[?&]/.test(title) || /\.(aac|m3u|pls|mp3|flac|ogg)$/i.test(title) || /^[A-Z0-9]{6,}$/.test(title));
-      if (isUglyUrl) {
-        console.log(`[Radio] Zone ${base.id}: title looks like URL/stream. Cache hit: ${cachedRadio ? cachedRadio.name : "NO CACHE"}`);
-      }
-      if ((isUglyUrl || !title) && cachedRadio && Date.now() - cachedRadio.timestamp < 300000) {
-        // Use cached station name if title is missing/ugly and cache is less than 5 minutes old
-        console.log(`[Radio] Using cached name: "${cachedRadio.name}"`);
-        base.track = { title: cachedRadio.name, artist: "Radio" };
-      } else if (!title || isUglyUrl) {
+      if (isUglyUrl || (!title && cachedRadio)) {
+        base.track = { title: cachedRadio?.name ?? "Live radio", artist: "Radio" };
+      } else if (title) {
         lastRadioByZone.delete(base.id);
       }
       captureSpotifyContext(tag(position, "TrackURI"), didl);

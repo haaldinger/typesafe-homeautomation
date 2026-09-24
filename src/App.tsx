@@ -942,7 +942,9 @@ export default function App() {
           onToggleGroup={onToggleSpeakerGroup}
           lightRooms={
             realDevices && home
-              ? home.rooms.filter((r) => home.devices.some((d) => d.room === r.id && d.type === "light" && d.supportsColor))
+              ? home.rooms.filter((r) =>
+                  home.devices.some((d) => d.room === r.id && d.type === "light" && d.supportsColor && d.available !== false),
+                )
               : []
           }
           lightSyncRoom={lightSync[detailZone.id]}
