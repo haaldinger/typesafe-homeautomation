@@ -23,6 +23,8 @@ import {
   Lightbulb,
   Sparkles,
   ListPlus,
+  PanelRightClose,
+  PanelRightOpen,
 } from "lucide-react";
 import {
   fetchEq,
@@ -105,6 +107,24 @@ export function ZoneDetail({
   onLightSync,
 }: ZoneDetailProps) {
   const [tab, setTab] = useState<Tab>("queue");
+  // Side panel (queue, radio, Spotify…) can be hidden for a wall-panel now-playing view. Wide screens only.
+  const [panelOpen, setPanelOpen] = useState(() => {
+    try {
+      return localStorage.getItem("aura.detailPanel") !== "closed";
+    } catch {
+      return true;
+    }
+  });
+  function togglePanel() {
+    setPanelOpen((open) => {
+      try {
+        localStorage.setItem("aura.detailPanel", open ? "closed" : "open");
+      } catch {
+        // Preference just won't persist.
+      }
+      return !open;
+    });
+  }
   const isPlaying = zone.playback === "playing";
   const track = zone.track;
   const pct = zone.duration ? Math.min(100, ((zone.elapsed ?? 0) / zone.duration) * 100) : 0;
@@ -144,8 +164,12 @@ export function ZoneDetail({
   }, [tab, zone.id]);
 
   const trackKey = `${track?.artist}|${track?.title}`;
+  // Loaded whenever the song changes: the Lyrics tab and the live line under the title share it.
   useEffect(() => {
-    if (tab !== "lyrics" || !track) return;
+    if (!track || track.artist === "Radio") {
+      setLyrics(null);
+      return;
+    }
     let cancelled = false;
     setLyricsLoading(true);
     setLyrics(null);
@@ -157,7 +181,7 @@ export function ZoneDetail({
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab, trackKey]);
+  }, [trackKey]);
 
   // "More like this", refreshed when the song changes.
   const [similar, setSimilar] = useState<SpotifyResult[]>([]);
@@ -199,6 +223,10 @@ export function ZoneDetail({
     }
     return idx;
   }, [lyrics, zone.elapsed]);
+
+  // The line being sung right now and the one after it, for the live display under the title.
+  const liveLine = activeLine >= 0 ? lyrics!.synced[activeLine].text.trim() || "♪" : null;
+  const nextLine = activeLine >= 0 ? lyrics!.synced[activeLine + 1]?.text.trim() || null : null;
 
   const activeLineRef = useRef<HTMLLIElement>(null);
   useEffect(() => {
@@ -322,6 +350,15 @@ export function ZoneDetail({
               </button>
             )}
             <button
+              onClick={togglePanel}
+              className="hidden lg:flex p-2 rounded-xl bg-neutral-900 hover:bg-neutral-800 text-neutral-400 hover:text-white border border-neutral-800 hover:border-neutral-700 transition"
+              aria-label={panelOpen ? "Hide side panel" : "Show side panel"}
+              aria-expanded={panelOpen}
+              title={panelOpen ? "Hide side panel" : "Show queue, radio, Spotify…"}
+            >
+              {panelOpen ? <PanelRightClose className="w-5 h-5" /> : <PanelRightOpen className="w-5 h-5" />}
+            </button>
+            <button
               onClick={onClose}
               className="p-2 rounded-xl bg-neutral-900 hover:bg-neutral-800 text-neutral-400 hover:text-white border border-neutral-800 hover:border-neutral-700 transition"
               aria-label="Close"
@@ -333,9 +370,11 @@ export function ZoneDetail({
 
         <div className="flex-1 overflow-y-auto grid grid-cols-1 lg:grid-cols-12 divide-y lg:divide-y-0 lg:divide-x divide-neutral-800/80">
           {/* Now playing */}
-          <div className="lg:col-span-6 p-6 flex flex-col justify-between space-y-6">
+          <div className={`${panelOpen ? "lg:col-span-6" : "lg:col-span-12"} p-6 flex flex-col justify-between space-y-6`}>
             <div
-              className="relative mx-auto w-56 h-56 sm:w-64 sm:h-64 rounded-2xl overflow-hidden shadow-2xl border border-neutral-700/60 group"
+              className={`relative mx-auto rounded-2xl overflow-hidden shadow-2xl border border-neutral-700/60 group transition-all duration-300 ${
+                panelOpen ? "w-56 h-56 sm:w-64 sm:h-64" : "w-64 h-64 sm:w-80 sm:h-80"
+              }`}
               style={zone.art ? undefined : coverStyle(track?.title ?? zone.name)}
             >
               {zone.art ? (
@@ -359,6 +398,23 @@ export function ZoneDetail({
                 <h3 className="text-xl font-bold text-white tracking-tight">{track?.title || "Nothing playing"}</h3>
                 <p className="text-sm text-neutral-400 font-medium mt-0.5">{track?.artist || "Pick a station or track"}</p>
                 {track?.album && <p className="text-xs text-neutral-500 mt-0.5">{track.album}</p>}
+                {liveLine && (
+                  <div className="mt-4 min-h-[3.5rem]" aria-live="polite">
+                    <p
+                      key={activeLine}
+                      className={`font-semibold text-amber-300 leading-snug animate-[fadeIn_0.4s_ease-out] ${
+                        panelOpen ? "text-base sm:text-lg" : "text-xl sm:text-3xl max-w-3xl mx-auto"
+                      }`}
+                    >
+                      {liveLine}
+                    </p>
+                    {nextLine && (
+                      <p className={`text-neutral-500 mt-1 leading-snug ${panelOpen ? "text-sm" : "text-base sm:text-xl max-w-3xl mx-auto"}`}>
+                        {nextLine}
+                      </p>
+                    )}
+                  </div>
+                )}
               </div>
 
               {/* Progress (read-only: the backend has no seek action) */}
@@ -456,8 +512,8 @@ export function ZoneDetail({
           </div>
 
           {/* Tabs */}
-          <div className="lg:col-span-6 flex flex-col h-full min-h-0 bg-neutral-950/40">
-            <div className="flex items-center gap-1.5 p-3 border-b border-neutral-800/80 overflow-x-auto" role="tablist">
+          <div className={`${panelOpen ? "lg:col-span-6 lg:flex" : "lg:hidden"} flex flex-col h-full min-h-0 bg-neutral-950/40`}>
+            <div className="flex flex-wrap items-center gap-1.5 p-3 border-b border-neutral-800/80" role="tablist">
               {tabs.map((t) => (
                 <button
                   key={t.id}

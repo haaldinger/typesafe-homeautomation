@@ -47,6 +47,18 @@
   animation: eqBounce 0.9s ease-in-out 0.1s infinite alternate;
 }
 
+/* Live lyric line swap */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 /* Vinyl rotation animation */
 @keyframes vinylSpin {
   from {
