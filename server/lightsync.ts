@@ -132,7 +132,8 @@ const TICK_MS = 4000;
 export function startLightSync(gateway: DeviceGateway, sonos: { getZones(): Promise<SonosZone[]> }): void {
   let busy = false;
   setInterval(async () => {
-    if (busy || Object.keys(mappings).length === 0) return;
+    // The simulator has no bulbs to paint (e.g. while in Demo mode).
+    if (busy || Object.keys(mappings).length === 0 || gateway.name === "sim") return;
     busy = true;
     try {
       const zones = await sonos.getZones();

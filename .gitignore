@@ -7,3 +7,4 @@ dist
 .aura-spotify.json
 .aura-hue.json
 .aura-lightsync.json
+.aura-profile.json

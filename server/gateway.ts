@@ -6,6 +6,7 @@ import type { DeviceAction, HomeState } from "../shared/types.ts";
 import { createInitialHome } from "../shared/home.ts";
 import { commitToHomeAssistant, loadHomeAssistantState } from "./homeassistant.ts";
 import { commitToHue, loadHueState } from "./hue.ts";
+import { isDemo } from "./profile.ts";
 
 export interface DeviceGateway {
   name: string;
@@ -45,9 +46,20 @@ const homeAssistantGateway: DeviceGateway = {
   },
 };
 
-export function getGateway(): DeviceGateway {
+/** The backend .env asks for; Demo mode overrides it with the simulator. */
+function current(): DeviceGateway {
+  if (isDemo()) return simGateway;
   const kind = (process.env.GATEWAY ?? "sim").toLowerCase();
   if (kind === "homeassistant" || kind === "hass" || kind === "ha") return homeAssistantGateway;
   if (kind === "hue") return hueGateway;
   return simGateway;
 }
+
+/** Always delegates to the current backend, so switching Demo/Home needs no restart. */
+export const gateway: DeviceGateway = {
+  get name() {
+    return current().name;
+  },
+  loadState: (clientHome) => current().loadState(clientHome),
+  commit: (actions) => current().commit(actions),
+};

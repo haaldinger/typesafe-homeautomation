@@ -5,7 +5,8 @@ import type { AudioAction, CommandResolution, CommandResponse, DeviceAction, Pat
 import { buildQuestions, homeSummary, systemOne } from "./typesafe.ts";
 import { applyActions, applyOverrides, categoryOf, isCompound, resolveCommand, treatStopAsLightCommand } from "./resolve.ts";
 import { conversationalReply, llmEnabled, splitRequest } from "./llm.ts";
-import { getGateway } from "./gateway.ts";
+import { gateway } from "./gateway.ts";
+import { getProfile, setProfile, type Profile } from "./profile.ts";
 import { resetMockZones, sonosGateway } from "./sonos.ts";
 import { STATIONS, stationById } from "./stations.ts";
 import { searchSpotify, spotifyConfigured } from "./spotify.ts";
@@ -20,8 +21,7 @@ const app = express();
 app.use(cors());
 app.use(express.json({ limit: "1mb" }));
 
-const gateway = getGateway();
-if (gateway.name !== "sim") startLightSync(gateway, sonosGateway);
+startLightSync(gateway, sonosGateway);
 const errMsg = (e: unknown) => (e instanceof Error ? e.message : "Unknown error");
 
 app.get("/api/health", (_req, res) => {
@@ -33,7 +33,21 @@ app.get("/api/health", (_req, res) => {
     sonos: sonosGateway.mode,
     spotify: spotifyConfigured(),
     spotifyLinked: sonosGateway.spotifyLinked(),
+    profile: getProfile(),
   });
+});
+
+// Demo (simulated house + mock speakers) vs Home (real devices from .env).
+app.post("/api/profile", async (req, res) => {
+  const next = req.body?.profile as Profile;
+  if (next !== "demo" && next !== "home") {
+    res.status(400).json({ error: "profile must be 'demo' or 'home'" });
+    return;
+  }
+  // Leave the real lights as they were before switching away from them.
+  if (next !== getProfile()) await stopPattern(gateway, "all").catch(() => {});
+  setProfile(next);
+  res.json({ profile: next, gateway: gateway.name, sonos: sonosGateway.mode });
 });
 
 app.get("/api/home", async (_req, res) => {

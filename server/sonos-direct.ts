@@ -5,6 +5,7 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import type { AudioAction, EqState, Favorite, QueueTrack, SonosZone } from "../shared/types.ts";
 import { getSpotifyTracks } from "./spotify.ts";
+import { isDemo } from "./profile.ts";
 
 const AV = {
   type: "urn:schemas-upnp-org:service:AVTransport:1",
@@ -27,7 +28,7 @@ export function directHosts(): string[] {
 }
 
 export function directEnabled(): boolean {
-  return directHosts().length > 0;
+  return !isDemo() && directHosts().length > 0;
 }
 
 function slug(name: string): string {

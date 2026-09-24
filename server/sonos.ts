@@ -3,6 +3,7 @@
 // running node-sonos-http-api. Select with SONOS_MODE in .env.
 
 import type { AudioAction, EqState, Favorite, QueueTrack, SonosZone } from "../shared/types.ts";
+import { isDemo } from "./profile.ts";
 import {
   applyDirect,
   directEnabled,
@@ -18,7 +19,7 @@ import {
   spotifyLinked as directSpotifyLinked,
 } from "./sonos-direct.ts";
 
-const MODE = () => (process.env.SONOS_MODE ?? "mock").toLowerCase();
+const MODE = () => (isDemo() ? "mock" : (process.env.SONOS_MODE ?? "mock").toLowerCase());
 const API_URL = () => (process.env.SONOS_API_URL ?? "http://localhost:5005").replace(/\/$/, "");
 
 // ---- Mock state (persists for the life of the server process) ---------------
