@@ -232,6 +232,7 @@ export function buildQuestions(home: HomeState, zones: SonosZone[] = []): Record
       group: "Group, link, pair, sync, or connect speakers together so the same music plays in multiple zones.",
       ungroup: "Ungroup, unlink, unpair, or separate speakers.",
       play_favorite: "Play a favorite, station, or playlist.",
+      play_similar: "Play or queue more music like what's playing now (more like this, something similar, keep this vibe going).",
       none: "Not an audio command.",
     },
   },

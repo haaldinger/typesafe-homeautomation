@@ -167,6 +167,10 @@ export interface Lyrics {
   source: string;
 }
 
+/** "More like this": playable Spotify tracks similar to the given artist. */
+export const fetchSuggestions = (artist: string, title: string) =>
+  getJson<SpotifyResult[]>(`/api/suggest?${new URLSearchParams({ artist, title })}`, "suggestions");
+
 export async function fetchLyrics(artist: string, title: string, duration = 0): Promise<Lyrics | null> {
   const res = await fetch(
     apiUrl(

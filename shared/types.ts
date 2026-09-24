@@ -148,6 +148,8 @@ export interface SpotifyResult {
   album: string;
   art?: string;
   durationMs: number;
+  /** Why it was suggested, e.g. "Similar to Beastie Boys". */
+  reason?: string;
 }
 
 /** A zone's sound / EQ settings. */

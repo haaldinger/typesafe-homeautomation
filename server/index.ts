@@ -13,6 +13,7 @@ import { fetchLyrics } from "./lyrics.ts";
 import { searchRadio } from "./radio.ts";
 import { rawTransportDirect } from "./sonos-direct.ts";
 import { getLightSync, setLightSync, startLightSync } from "./lightsync.ts";
+import { suggestFor } from "./suggest.ts";
 import { interruptPatterns, listPatterns, PATTERN_PRESETS, startPattern, stopPattern } from "./patterns.ts";
 
 const app = express();
@@ -200,6 +201,24 @@ app.post("/api/spotify/play", async (req, res) => {
     }
     await sonosGateway.playSpotify(zoneId, uri, title, mode);
     res.json(await sonosGateway.getZones());
+  } catch (err) {
+    res.status(500).json({ error: errMsg(err) });
+  }
+});
+
+// "More like this": playable Spotify tracks similar to an artist.
+app.get("/api/suggest", async (req, res) => {
+  try {
+    const artist = (req.query.artist ?? "").toString();
+    if (!artist) {
+      res.status(400).json({ error: "artist is required" });
+      return;
+    }
+    if (!spotifyConfigured()) {
+      res.status(503).json({ error: "Spotify isn't configured. Set SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET." });
+      return;
+    }
+    res.json(await suggestFor(artist, (req.query.title ?? "").toString()));
   } catch (err) {
     res.status(500).json({ error: errMsg(err) });
   }
@@ -452,6 +471,21 @@ app.post("/api/command", async (req, res) => {
     }
 
     const allPatternActions = resolutions.flatMap((r) => r.patternActions ?? []);
+
+    // "Play more like this": queue similar songs after whatever is playing.
+    for (const a of allAudioActions.filter((x) => x.kind === "play_similar")) {
+      const zone = zones.find((z) => z.id === a.zone);
+      if (!zone?.track?.artist || zone.track.artist === "Radio") {
+        a.summary = `nothing playing on ${a.zoneName} to match`;
+        continue;
+      }
+      const picks = spotifyConfigured() ? await suggestFor(zone.track.artist, zone.track.title).catch(() => []) : [];
+      for (const t of picks) await sonosGateway.playSpotify(zone.id, t.uri, `${t.name} — ${t.artist}`, "end");
+      a.summary = picks.length
+        ? `queued ${picks.length} songs like ${zone.track.artist} on ${a.zoneName}`
+        : `couldn't find songs like ${zone.track.artist}`;
+      a.chips = picks.slice(0, 3).map((t) => t.name);
+    }
 
     // A direct change to a room takes over from any pattern running there, except
     // rooms being stopped explicitly, which get their lights restored below.

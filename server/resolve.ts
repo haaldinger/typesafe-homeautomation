@@ -320,6 +320,8 @@ function oneAudioAction(zone: SonosZone, action: string, r: SystemOneResponse): 
       return { ...base, kind: "volume_up", summary: `${zone.name} louder`, chips: ["vol +10"] };
     case "volume_down":
       return { ...base, kind: "volume_down", summary: `${zone.name} quieter`, chips: ["vol \u221210"] };
+    case "play_similar":
+      return { ...base, kind: "play_similar", summary: `${zone.name} queueing more like this`, chips: ["more like this"] };
     case "set_volume": {
       const v = VOLUME_LEVELS[Math.max(0, Math.min(4, Math.round(score(r, "volume_level").score)))];
       return { ...base, kind: "set_volume", summary: `${zone.name} volume ${v}`, chips: [`vol ${v}`] };
