@@ -46,6 +46,9 @@ import {
 } from "./api.ts";
 import { Mic, Send, Sparkles, Activity, AlertCircle, Clock, Waves, Square } from "lucide-react";
 
+/** Words that don't help pick a follow-up option ("the floor one"). */
+const FILLER = new Set(["the", "one", "that", "this", "please", "lamp", "light", "lights", "room"]);
+
 const PATTERN_BUTTONS: { kind: PatternKind; label: string; icon: string }[] = [
   { kind: "blink", label: "Blink", icon: "💡" },
   { kind: "alternate", label: "Alternate", icon: "🔀" },
@@ -543,8 +546,13 @@ export default function App() {
     const said = text.trim().toLowerCase();
     // Short replies only, so a new full command isn't mistaken for an answer.
     if (pending && !overrides && said.split(/\s+/).length <= 3) {
-      const match = pending.options.find((o) => said.includes(o.label.toLowerCase()) || o.label.toLowerCase().includes(said));
-      if (match) return submit(pending.request, match.overrides);
+      // "the floor one" -> "floor"; pick the option only if exactly one matches.
+      const words = said.split(/\W+/).filter((w) => w.length >= 3 && !FILLER.has(w));
+      const matches = pending.options.filter((o) => {
+        const label = o.label.toLowerCase();
+        return said.includes(label) || label.includes(said) || words.some((w) => label.includes(w));
+      });
+      if (matches.length === 1) return submit(pending.request, matches[0].overrides);
     }
     setLoading(true);
     setReply(null);

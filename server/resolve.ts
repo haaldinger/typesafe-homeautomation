@@ -515,8 +515,22 @@ export function resolveCommand(
   if (deviceType === "thermostat") used.add("temperature_direction");
   if (deviceType === "light" || action === "set_color") used.add("light_color");
 
+  // "The lamp": one named device. Ask if it could be several; ignore when clearly room- or house-wide.
+  let onlyDevice: Device | undefined;
+  const deviceAnswer = r.answers.device as ChoiceAnswer | undefined;
+  if (deviceAnswer && action !== "none" && (deviceAnswer.probabilities.none ?? 0) < ASK_BELOW) {
+    used.add("device");
+    const q = ask("device", "Which one", (id) => {
+      if (id === "none") return { label: "all of them", overrides: { device: "none" } };
+      const d = home.devices.find((x) => x.id === id);
+      return d ? { label: `${d.name} (${roomLabel(d.room)})`, overrides: { device: id } } : null;
+    });
+    if (q) return q;
+    if (deviceAnswer.choice !== "none") onlyDevice = home.devices.find((d) => d.id === deviceAnswer.choice);
+  }
+
   // Unsure where or what color? Ask rather than change the wrong thing.
-  if (action !== "none" && scope !== "whole_house") {
+  if (!onlyDevice && action !== "none" && scope !== "whole_house") {
     const q = ask("room", "Which room", (id): ClarifyOption | null =>
       id === "none"
         ? { label: "everywhere", overrides: { room: "none", scope: "whole_house" } }
@@ -537,7 +551,8 @@ export function resolveCommand(
     if (q) return q;
   }
 
-  const pattern = resolvePattern(r, action, room, roomLabel, used);
+  // Patterns run per room, so "blink the lamp" animates the lamp's room.
+  const pattern = resolvePattern(r, action, onlyDevice?.room ?? room, roomLabel, used);
   if (pattern) {
     return {
       request,
@@ -551,7 +566,7 @@ export function resolveCommand(
 
   // Color and effect requests only make sense for lights, even if the device type was missed.
   const lightOnly = ["set_color", "party_mode", "stop_effect", "flash"].includes(action);
-  const targets = targetDevices(home, scope, room, lightOnly ? "light" : deviceType);
+  const targets = onlyDevice ? [onlyDevice] : targetDevices(home, scope, room, lightOnly ? "light" : deviceType);
   const actions: DeviceAction[] = [];
   for (const device of targets) {
     const patch = applyAction(device, action, r);

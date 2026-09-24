@@ -103,6 +103,7 @@ export const QUESTION_LABELS: Record<string, string> = {
   is_compound: "Does this ask for more than one thing?",
   light_color: "What color should the lights be?",
   light_scene: "Which saved lighting scene?",
+  device: "Which specific device?",
   pattern_style: "What kind of light pattern?",
   pattern_speed: "How fast should the pattern go?",
 };
@@ -276,6 +277,17 @@ export function buildQuestions(home: HomeState, zones: SonosZone[] = []): Record
     type: "choice",
     instructions: "If `request` asks for a light color or white tone, which one fits best? Choose 'none' if no color is mentioned.",
     criteria: colorCriteria,
+  };
+
+  const roomName = new Map(home.rooms.map((r) => [r.id, r.name]));
+  const deviceCriteria: Record<string, string | null> = {};
+  for (const d of home.devices) deviceCriteria[d.id] = `${d.name} (${d.type} in ${roomName.get(d.room) ?? d.room})`;
+  deviceCriteria.none = "No single specific device: the request is about a whole room, a kind of device, or everything.";
+  questions.device = {
+    type: "choice",
+    instructions:
+      "Does `request` refer to one specific device by name or description (e.g. 'the table light', 'the floor lamp')? A singular reference like 'the lamp', 'the light' or 'that one' means a single device even when no device name matches it exactly: then pick the device(s) it most plausibly means. Choose 'none' only for plural or general requests about a room, a kind of device, or everything (e.g. 'the lights', 'everything in the kitchen').",
+    criteria: deviceCriteria,
   };
 
   questions.pattern_style = {
