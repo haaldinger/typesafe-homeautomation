@@ -52,15 +52,16 @@ export function ZoneCard({ zone, flash = false, onControl, onOpen }: ZoneCardPro
 
         <button
           onClick={onOpen}
-          className="p-2 rounded-xl bg-neutral-800/60 hover:bg-neutral-800 text-neutral-400 hover:text-white border border-neutral-700/60 hover:border-neutral-600 transition shadow-sm"
+          className="shrink-0 p-2 touch:min-w-11 touch:min-h-11 flex items-center justify-center rounded-xl bg-neutral-800/60 hover:bg-neutral-800 text-neutral-400 hover:text-white border border-neutral-700/60 hover:border-neutral-600 transition shadow-sm"
           title="Open zone controller & queue"
+          aria-label={`Open ${zone.name} controls and queue`}
         >
           <Maximize2 className="w-4 h-4" />
         </button>
       </div>
 
       {/* Artwork + track info */}
-      <div className="px-4 py-2 flex items-center gap-4">
+      <div className="px-4 py-2 flex items-center gap-4 min-w-0">
         <div className="relative shrink-0 w-20 h-20">
           <div
             className={`absolute top-0 right-0 w-20 h-20 rounded-full bg-neutral-950 border-2 border-neutral-700/80 flex items-center justify-center shadow-lg transition-transform duration-500 ${
@@ -131,7 +132,7 @@ export function ZoneCard({ zone, flash = false, onControl, onOpen }: ZoneCardPro
         <div className="flex items-center gap-1.5">
           <button
             onClick={() => onControl("previous")}
-            className="p-1.5 rounded-lg hover:bg-neutral-800 text-neutral-400 hover:text-white transition"
+            className="p-1.5 touch:min-w-11 touch:min-h-11 flex items-center justify-center rounded-lg hover:bg-neutral-800 text-neutral-400 hover:text-white transition"
             title="Previous track"
           >
             <SkipBack className="w-4 h-4" />
@@ -139,7 +140,7 @@ export function ZoneCard({ zone, flash = false, onControl, onOpen }: ZoneCardPro
 
           <button
             onClick={() => onControl(isPlaying ? "pause" : "play")}
-            className={`p-2.5 rounded-xl font-bold flex items-center justify-center transition shadow-md ${
+            className={`p-2.5 touch:min-w-11 touch:min-h-11 rounded-xl font-bold flex items-center justify-center transition shadow-md ${
               isPlaying
                 ? "bg-amber-500 text-neutral-950 hover:bg-amber-400 shadow-amber-500/25 ring-2 ring-amber-400/40"
                 : "bg-white text-neutral-950 hover:bg-neutral-200"
@@ -151,7 +152,7 @@ export function ZoneCard({ zone, flash = false, onControl, onOpen }: ZoneCardPro
 
           <button
             onClick={() => onControl("next")}
-            className="p-1.5 rounded-lg hover:bg-neutral-800 text-neutral-400 hover:text-white transition"
+            className="p-1.5 touch:min-w-11 touch:min-h-11 flex items-center justify-center rounded-lg hover:bg-neutral-800 text-neutral-400 hover:text-white transition"
             title="Next track"
           >
             <SkipForward className="w-4 h-4" />

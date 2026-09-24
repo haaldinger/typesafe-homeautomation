@@ -84,6 +84,18 @@ const EXAMPLES = [
   { label: "Weather?", cmd: "What's the weather like today?" },
 ];
 
+/** "Try" chips when real lights are connected: show off what this house can actually do. */
+const REAL_EXAMPLES = [
+  { label: "Kitchen blue", cmd: "Turn the kitchen light blue" },
+  { label: "Relax scene", cmd: "Set the living room to Relax" },
+  { label: "Party mode", cmd: "Party mode in the living room" },
+  { label: "Blink purple + pink", cmd: "Blink the living room purple and pink every 3 seconds" },
+  { label: "Fireplace", cmd: "Make the living room flicker like a fireplace" },
+  { label: "Stop the lights", cmd: "Stop the lights" },
+  { label: "Make it teal", cmd: "Make it teal" },
+  { label: "More like this", cmd: "Play more like this" },
+];
+
 function roomSummary(devices: Device[]): SummaryChip[] {
   const chips: SummaryChip[] = [];
   const of = (t: Device["type"]) => devices.filter((d) => d.type === t);
@@ -142,6 +154,11 @@ function readStorage<T>(key: string, fallback: T): T {
   }
 }
 
+/** Matches Tailwind's `lg` breakpoint, where the trace becomes a side column. */
+function isWide(): boolean {
+  return window.matchMedia?.("(min-width: 1024px)").matches ?? true;
+}
+
 function writeStorage(key: string, value: unknown): void {
   try {
     localStorage.setItem(key, typeof value === "string" ? value : JSON.stringify(value));
@@ -181,7 +198,10 @@ export default function App() {
   const [order, setOrder] = useState<string[]>(() => readStorage<string[]>("aura.order", []));
   const [dragId, setDragId] = useState<string | null>(null);
   const [overId, setOverId] = useState<string | null>(null);
+  // The trace is a side column on wide screens and a sheet over the page on phones/tablets,
+  // where it starts closed and its open state isn't remembered.
   const [inspectorOpen, setInspectorOpen] = useState<boolean>(() => {
+    if (!isWide()) return false;
     try {
       return localStorage.getItem("aura.inspector") !== "closed";
     } catch {
@@ -192,10 +212,24 @@ export default function App() {
   function toggleInspector() {
     setInspectorOpen((o) => {
       const next = !o;
-      writeStorage("aura.inspector", next ? "open" : "closed");
+      if (isWide()) writeStorage("aura.inspector", next ? "open" : "closed");
       return next;
     });
   }
+
+  // HTML5 drag-and-drop only works with a mouse; on touch screens it just gets in the way.
+  const canDrag = useMemo(() => window.matchMedia?.("(pointer: fine)").matches ?? true, []);
+
+  // Escape closes the trace sheet on narrow screens.
+  useEffect(() => {
+    if (!inspectorOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !isWide() && !detailZoneId && !showSettings) toggleInspector();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [inspectorOpen, detailZoneId, showSettings]);
 
   function toggleCollapse(id: string) {
     setCollapsed((prev) => {
@@ -603,7 +637,7 @@ export default function App() {
         subtitle: `Sonos · ${zones.length} ${zones.length === 1 ? "zone" : "zones"}`,
         summary: speakerSummary(zones),
         render: () => (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-6">
             {zones.map((z) => (
               <ZoneCard
                 key={z.id}
@@ -650,19 +684,19 @@ export default function App() {
                         </span>
                         <button
                           onClick={() => onStopPattern(running.room)}
-                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 text-xs font-semibold text-white transition"
+                          className="flex items-center gap-1.5 px-3 py-1.5 touch:min-h-11 rounded-xl bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 text-xs font-semibold text-white transition"
                         >
                           <Square className="w-3 h-3 fill-current" /> Stop
                         </button>
                       </>
                     ) : (
                       <>
-                        <span className="text-[11px] uppercase font-bold tracking-wider text-neutral-500 mr-1">Patterns</span>
+                        <span className="w-full sm:w-auto text-[11px] uppercase font-bold tracking-wider text-neutral-500 mr-1">Patterns</span>
                         {PATTERN_BUTTONS.map((p) => (
                           <button
                             key={p.kind}
                             onClick={() => onStartPattern(room.id, p.kind)}
-                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-neutral-800/60 hover:bg-neutral-800 border border-neutral-700/60 hover:border-fuchsia-500/40 text-xs font-medium text-neutral-300 hover:text-white transition"
+                            className="flex items-center gap-1.5 px-3 py-1.5 touch:min-h-11 rounded-xl bg-neutral-800/60 hover:bg-neutral-800 border border-neutral-700/60 hover:border-fuchsia-500/40 text-xs font-medium text-neutral-300 hover:text-white transition"
                           >
                             <span>{p.icon}</span>
                             {p.label}
@@ -678,7 +712,7 @@ export default function App() {
                       <button
                         key={s.id}
                         onClick={() => activateScene(s)}
-                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-neutral-800/60 hover:bg-neutral-800 border border-neutral-700/60 hover:border-amber-500/40 text-xs font-medium text-neutral-300 hover:text-white transition"
+                        className="flex items-center gap-1.5 px-3 py-1.5 touch:min-h-11 rounded-xl bg-neutral-800/60 hover:bg-neutral-800 border border-neutral-700/60 hover:border-amber-500/40 text-xs font-medium text-neutral-300 hover:text-white transition"
                       >
                         <Sparkles className="w-3 h-3 text-amber-400" />
                         {s.name}
@@ -736,7 +770,7 @@ export default function App() {
   const detailZone = detailZoneId ? zones.find((z) => z.id === detailZoneId) : undefined;
 
   return (
-    <div className="min-h-screen lg:h-screen bg-neutral-950 text-neutral-100 flex flex-col font-sans">
+    <div className="min-h-dvh lg:h-dvh bg-neutral-950 text-neutral-100 flex flex-col font-sans">
       <Topbar
         status={status}
         activeZonesCount={activeZonesCount}
@@ -751,17 +785,19 @@ export default function App() {
       {!inspectorOpen && (
         <button
           onClick={toggleInspector}
-          className="fixed bottom-6 right-6 z-40 flex items-center gap-2 px-3.5 py-2.5 rounded-2xl bg-neutral-900/90 hover:bg-neutral-800 border border-neutral-700/80 text-neutral-300 hover:text-white shadow-2xl backdrop-blur-md transition group"
+          className="fixed bottom-[max(1rem,env(safe-area-inset-bottom))] right-[max(1rem,env(safe-area-inset-right))] sm:bottom-[max(1.5rem,env(safe-area-inset-bottom))] sm:right-[max(1.5rem,env(safe-area-inset-right))] z-40 flex items-center gap-2 px-3.5 py-2.5 touch:min-h-11 rounded-2xl bg-neutral-900/90 hover:bg-neutral-800 border border-neutral-700/80 text-neutral-300 hover:text-white shadow-2xl backdrop-blur-md transition group"
           title="Open decision trace"
         >
           <Activity className="w-4 h-4 text-amber-400 group-hover:scale-110 transition-transform" />
-          <span className="text-xs font-semibold">Decision Trace</span>
+          <span className="text-xs font-semibold">
+            <span className="hidden sm:inline">Decision </span>Trace
+          </span>
           {result && <span className="w-2 h-2 rounded-full bg-emerald-400" />}
         </button>
       )}
 
       <div className="flex-1 flex flex-col lg:flex-row lg:min-h-0 lg:overflow-hidden">
-        <main className="flex-1 lg:overflow-y-auto px-4 sm:px-8 py-6">
+        <main className="flex-1 min-w-0 lg:overflow-y-auto pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))] sm:pl-[max(2rem,env(safe-area-inset-left))] sm:pr-[max(2rem,env(safe-area-inset-right))] pt-4 sm:pt-6 pb-[max(6rem,calc(env(safe-area-inset-bottom)_+_5rem))] lg:pb-6">
           <div className="max-w-7xl mx-auto w-full">
             {healthLoaded && !health && (
               <div className="mb-6 p-4 rounded-2xl bg-rose-950/30 border border-rose-500/40 text-sm text-rose-200">
@@ -782,26 +818,32 @@ export default function App() {
                   void submit(cmd);
                 }}
                 onClose={() => setShowScenes(false)}
+                realHome={
+                  realDevices
+                    ? { sceneNames: [...new Set((home?.scenes ?? []).map((s) => s.name))], zoneName: zones[0]?.name }
+                    : undefined
+                }
               />
             )}
 
             {/* Natural-language + voice command */}
-            <div className="relative mb-8 rounded-3xl p-5 sm:p-7 bg-gradient-to-b from-neutral-900/90 via-neutral-900/60 to-neutral-950 border border-neutral-800/80 shadow-2xl overflow-hidden">
+            <div className="relative mb-6 sm:mb-8 rounded-3xl p-4 sm:p-7 bg-gradient-to-b from-neutral-900/90 via-neutral-900/60 to-neutral-950 border border-neutral-800/80 shadow-2xl overflow-hidden">
               <div className="absolute top-0 right-1/3 -z-10 w-80 h-80 bg-amber-500/10 rounded-full blur-3xl pointer-events-none" />
 
-              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 mb-3.5">
-                <div className="relative flex-1 flex items-center">
+              <div className="flex flex-row items-stretch gap-2 sm:gap-2.5 mb-3.5">
+                <div className="relative flex-1 min-w-0 flex items-center">
                   <input
                     ref={inputRef}
                     value={input}
                     placeholder="Tell Aura what to do… e.g. “dim the living room and lock the doors”"
                     onChange={(e) => setInput(e.target.value)}
                     onKeyDown={(e) => e.key === "Enter" && void submit(input)}
-                    className="w-full pl-4 pr-12 py-3.5 rounded-2xl bg-neutral-950/80 border border-neutral-700/70 focus:border-amber-500 text-sm text-white placeholder-neutral-500 focus:outline-none focus:ring-2 focus:ring-amber-500/20 shadow-inner transition"
+                    enterKeyHint="send"
+                    className="w-full min-w-0 pl-4 pr-12 touch:pr-14 py-3.5 rounded-2xl bg-neutral-950/80 border border-neutral-700/70 focus:border-amber-500 text-base sm:text-sm text-white text-ellipsis placeholder-neutral-500 focus:outline-none focus:ring-2 focus:ring-amber-500/20 shadow-inner transition"
                   />
                   <button
                     onClick={toggleVoice}
-                    className={`absolute right-2 p-2 rounded-xl transition ${
+                    className={`absolute right-1.5 sm:right-2 p-2 touch:min-w-11 touch:min-h-11 flex items-center justify-center rounded-xl transition ${
                       listening
                         ? "bg-rose-500 text-white animate-pulse shadow-lg shadow-rose-500/40"
                         : "hover:bg-neutral-800 text-neutral-400 hover:text-white"
@@ -816,14 +858,15 @@ export default function App() {
                 <button
                   disabled={loading || !input.trim() || !home}
                   onClick={() => void submit(input)}
-                  className="px-6 py-3.5 rounded-2xl bg-amber-500 hover:bg-amber-400 disabled:opacity-40 disabled:hover:bg-amber-500 text-neutral-950 font-bold text-sm flex items-center justify-center gap-2 shadow-lg shadow-amber-500/25 transition"
+                  aria-label="Send"
+                  className="shrink-0 min-w-[3.25rem] px-4 sm:px-6 py-3.5 rounded-2xl bg-amber-500 hover:bg-amber-400 disabled:opacity-40 disabled:hover:bg-amber-500 text-neutral-950 font-bold text-sm flex items-center justify-center gap-2 shadow-lg shadow-amber-500/25 transition"
                 >
                   {loading ? (
                     <span className="w-4 h-4 border-2 border-neutral-950 border-t-transparent rounded-full animate-spin" />
                   ) : (
                     <>
                       <Send className="w-4 h-4" />
-                      <span>Send</span>
+                      <span className="hidden sm:inline">Send</span>
                     </>
                   )}
                 </button>
@@ -836,9 +879,10 @@ export default function App() {
                 </div>
               )}
 
-              <div className="flex flex-wrap items-center gap-2 pt-1">
-                <span className="text-[11px] font-semibold text-neutral-500 uppercase tracking-wider mr-1">Try:</span>
-                {EXAMPLES.map((ex) => (
+              {/* One swipeable row on phones; wraps on wider screens. */}
+              <div className="flex flex-nowrap sm:flex-wrap items-center gap-2 pt-1 -mx-4 px-4 sm:mx-0 sm:px-0 overflow-x-auto sm:overflow-visible no-scrollbar">
+                <span className="shrink-0 text-[11px] font-semibold text-neutral-500 uppercase tracking-wider mr-1">Try:</span>
+                {(realDevices ? REAL_EXAMPLES : EXAMPLES).map((ex) => (
                   <button
                     key={ex.cmd}
                     onClick={() => {
@@ -847,7 +891,7 @@ export default function App() {
                     }}
                     disabled={loading || !home}
                     title={ex.cmd}
-                    className="px-3 py-1.5 rounded-xl bg-neutral-950/60 hover:bg-neutral-800 border border-neutral-800 hover:border-neutral-700 text-xs text-neutral-300 hover:text-white transition disabled:opacity-50"
+                    className="shrink-0 whitespace-nowrap px-3 py-1.5 touch:min-h-11 rounded-xl bg-neutral-950/60 hover:bg-neutral-800 border border-neutral-800 hover:border-neutral-700 text-xs text-neutral-300 hover:text-white transition disabled:opacity-50"
                   >
                     {ex.label}
                   </button>
@@ -856,7 +900,7 @@ export default function App() {
 
               {reply && (
                 <div
-                  className={`mt-4 p-4 rounded-2xl border flex items-start gap-3.5 ${
+                  className={`mt-4 p-3.5 sm:p-4 rounded-2xl border flex items-start gap-3 sm:gap-3.5 ${
                     reply.error ? "bg-rose-950/30 border-rose-500/40 text-rose-200" : "bg-neutral-950/80 border-amber-500/30 text-neutral-200"
                   }`}
                 >
@@ -864,7 +908,7 @@ export default function App() {
                     {reply.error ? <AlertCircle className="w-5 h-5" /> : <Sparkles className="w-5 h-5" />}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium leading-relaxed">{reply.text}</p>
+                    <p className="text-sm font-medium leading-relaxed break-words">{reply.text}</p>
                     {reply.clarify && (
                       <div className="flex flex-wrap gap-2 mt-3">
                         {reply.clarify.options.map((o) => (
@@ -872,7 +916,7 @@ export default function App() {
                             key={o.label}
                             onClick={() => submit(reply.clarify!.request, o.overrides)}
                             disabled={loading}
-                            className="px-3.5 py-1.5 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 text-sm font-semibold text-amber-200 capitalize transition disabled:opacity-50"
+                            className="px-3.5 py-1.5 touch:min-h-11 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 text-sm font-semibold text-amber-200 capitalize transition disabled:opacity-50"
                           >
                             {o.label}
                           </button>
@@ -880,7 +924,7 @@ export default function App() {
                       </div>
                     )}
                     {reply.meta && (
-                      <div className="flex items-center gap-1.5 mt-1.5 text-xs text-neutral-400 font-mono">
+                      <div className="flex flex-wrap items-center gap-1.5 mt-1.5 text-xs text-neutral-400 font-mono">
                         <Clock className="w-3 h-3" />
                         <span>{reply.meta}</span>
                       </div>
@@ -890,7 +934,7 @@ export default function App() {
               )}
             </div>
 
-            <div className="space-y-4">
+            <div>
               {orderedSections.map((sec) => (
                 <Section
                   key={sec.id}
@@ -910,6 +954,7 @@ export default function App() {
                     setDragId(null);
                     setOverId(null);
                   }}
+                  draggable={canDrag}
                   dragging={dragId === sec.id}
                   over={overId === sec.id && dragId !== sec.id}
                   onQuickAction={sec.quickAction}
@@ -922,7 +967,13 @@ export default function App() {
           </div>
         </main>
 
-        {inspectorOpen && <Inspector result={result} onCollapse={toggleInspector} />}
+        {inspectorOpen && (
+          <>
+            {/* Below lg the trace is a sheet over the page; tap outside to close. */}
+            <div className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm lg:hidden" onClick={toggleInspector} aria-hidden />
+            <Inspector result={result} onCollapse={toggleInspector} />
+          </>
+        )}
       </div>
 
       {detailZone && (
@@ -953,7 +1004,18 @@ export default function App() {
       )}
 
       {showSettings && (
-        <SettingsModal health={health} onClose={() => setShowSettings(false)} onRefresh={loadAll} />
+        <SettingsModal
+          health={health}
+          onClose={() => setShowSettings(false)}
+          onRefresh={() => {
+            // A mode switch swaps the whole house; drop views tied to the old one.
+            setDetailZoneId(null);
+            setPatterns([]);
+            setResult(null);
+            setReply(null);
+            loadAll();
+          }}
+        />
       )}
     </div>
   );

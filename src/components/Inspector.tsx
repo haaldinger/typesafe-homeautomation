@@ -144,7 +144,7 @@ export function Inspector({ result, onCollapse }: InspectorProps) {
   const tabBtn = (id: Tab, label: string, icon: ReactNode) => (
     <button
       onClick={() => setTab(id)}
-      className={`flex items-center gap-1.5 pb-2 text-xs font-semibold border-b-2 transition ${
+      className={`flex items-center gap-1.5 pb-2 touch:pt-2 touch:min-h-11 text-xs font-semibold border-b-2 transition whitespace-nowrap ${
         tab === id ? "border-amber-400 text-amber-300" : "border-transparent text-neutral-400 hover:text-neutral-200"
       }`}
     >
@@ -157,10 +157,18 @@ export function Inspector({ result, onCollapse }: InspectorProps) {
   const actionCount = result ? result.actions.length + result.audioActions.length : 0;
 
   return (
-    <aside className="w-full lg:w-96 shrink-0 border-l border-neutral-800/80 bg-neutral-950/95 backdrop-blur-xl flex flex-col lg:h-full overflow-hidden">
-      <div className="p-4 border-b border-neutral-800/80 flex items-center justify-between bg-neutral-900/60">
-        <div className="flex items-center gap-2.5">
-          <div className="p-1.5 rounded-lg bg-amber-500/15 border border-amber-500/30 text-amber-400">
+    <aside
+      role="complementary"
+      aria-label="Decision trace"
+      className="fixed inset-x-0 bottom-0 z-50 h-[85dvh] max-h-[calc(100dvh_-_env(safe-area-inset-top)_-_1rem)] rounded-t-3xl border-t border-neutral-700/80 shadow-2xl lg:static lg:z-auto lg:h-full lg:max-h-none lg:w-80 xl:w-96 lg:rounded-none lg:border-t-0 lg:border-l lg:border-neutral-800/80 lg:shadow-none shrink-0 bg-neutral-950 lg:bg-neutral-950/95 backdrop-blur-xl flex flex-col overflow-hidden"
+    >
+      {/* Grab handle (visual only) on the phone/tablet sheet */}
+      <div className="lg:hidden flex justify-center pt-2 pb-0.5 bg-neutral-900/60" aria-hidden>
+        <span className="w-10 h-1 rounded-full bg-neutral-700" />
+      </div>
+      <div className="p-4 pt-2 lg:pt-4 pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))] lg:px-4 border-b border-neutral-800/80 flex items-center justify-between gap-2 bg-neutral-900/60">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <div className="shrink-0 p-1.5 rounded-lg bg-amber-500/15 border border-amber-500/30 text-amber-400">
             <Terminal className="w-4 h-4" />
           </div>
           <div>
@@ -170,20 +178,21 @@ export function Inspector({ result, onCollapse }: InspectorProps) {
         </div>
         <button
           onClick={onCollapse}
-          className="p-1.5 rounded-lg hover:bg-neutral-800 text-neutral-400 hover:text-white transition"
+          className="shrink-0 p-1.5 touch:min-w-11 touch:min-h-11 flex items-center justify-center rounded-lg hover:bg-neutral-800 text-neutral-400 hover:text-white transition"
           title="Collapse decision trace"
+          aria-label="Close decision trace"
         >
           <X className="w-4 h-4" />
         </button>
       </div>
 
-      <div className="flex items-center border-b border-neutral-800/80 px-4 pt-2 gap-3 bg-neutral-950">
+      <div className="flex items-center border-b border-neutral-800/80 px-4 pt-2 touch:pt-0 gap-4 lg:gap-3 bg-neutral-950 overflow-x-auto no-scrollbar">
         {tabBtn("trace", "TypeSafe", <ListTree className="w-3.5 h-3.5" />)}
         {tabBtn("actions", `Actions (${actionCount})`, <Zap className="w-3.5 h-3.5" />)}
         {tabBtn("json", "JSON", <Code2 className="w-3.5 h-3.5" />)}
       </div>
 
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+      <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-4 pb-[max(1rem,env(safe-area-inset-bottom))] lg:pb-4 space-y-4">
         {!result ? (
           <div className="text-center py-16 text-neutral-500">
             <Cpu className="w-10 h-10 mx-auto mb-3 opacity-30 text-amber-400" />
@@ -232,7 +241,7 @@ export function Inspector({ result, onCollapse }: InspectorProps) {
 
             {tab === "trace" && (
               <div className="space-y-4">
-                <div className="flex items-center gap-3 text-[10px] text-neutral-500">
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-neutral-500">
                   <span className="flex items-center gap-1">
                     <CheckCircle2 className="w-3 h-3 text-emerald-400" /> used by code
                   </span>
@@ -276,7 +285,7 @@ export function Inspector({ result, onCollapse }: InspectorProps) {
                             <Lightbulb className="w-3.5 h-3.5 text-amber-400" />
                             {act.deviceName}
                           </span>
-                          <span className="flex gap-1">
+                          <span className="flex flex-wrap justify-end gap-1">
                             {patchChips(act.patch).map((c) => (
                               <Chip key={c}>{c}</Chip>
                             ))}
@@ -308,7 +317,7 @@ export function Inspector({ result, onCollapse }: InspectorProps) {
                   <span className="text-[10px] uppercase font-bold tracking-wider text-neutral-400">CommandResponse</span>
                   <button
                     onClick={copyJson}
-                    className="flex items-center gap-1 text-[10px] font-semibold px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-neutral-300 hover:text-white transition"
+                    className="flex items-center gap-1 text-[10px] font-semibold px-2 py-1 touch:min-h-11 touch:px-3 rounded bg-neutral-800 hover:bg-neutral-700 text-neutral-300 hover:text-white transition"
                   >
                     {copied ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
                     {copied ? "Copied" : "Copy"}

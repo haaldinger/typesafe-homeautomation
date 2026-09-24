@@ -108,7 +108,7 @@ export function DeviceCard({ device, flash = false, onToggle, onUpdate }: Device
 
         <button
           onClick={() => onToggle(device)}
-          className={`relative p-2 rounded-xl border transition-all shrink-0 ${
+          className={`relative p-2 touch:min-w-11 touch:min-h-11 flex items-center justify-center rounded-xl border transition-all shrink-0 ${
             isLock
               ? device.locked
                 ? "bg-emerald-500/15 border-emerald-500/40 text-emerald-400"
@@ -118,6 +118,7 @@ export function DeviceCard({ device, flash = false, onToggle, onUpdate }: Device
                 : "bg-neutral-800/60 border-neutral-700/60 text-neutral-400 hover:bg-neutral-700/70 hover:text-neutral-200"
           }`}
           title={isLock ? (device.locked ? "Unlock" : "Lock") : device.on ? "Turn off" : "Turn on"}
+          aria-label={`${device.name}: ${isLock ? (device.locked ? "unlock" : "lock") : device.on ? "turn off" : "turn on"}`}
         >
           {isLock ? device.locked ? <Lock className="w-4 h-4" /> : <Unlock className="w-4 h-4" /> : <Power className="w-4 h-4" />}
         </button>
@@ -141,12 +142,12 @@ export function DeviceCard({ device, flash = false, onToggle, onUpdate }: Device
           />
 
           {device.on && device.supportsColor && (
-            <div className="flex items-center gap-1.5 mt-3">
+            <div className="flex items-center gap-1.5 touch:gap-2 mt-3">
               {SWATCHES.map((s) => (
                 <button
                   key={s.id}
                   onClick={() => update({ color: s.hex, colorMode: "color", effect: "none", on: true })}
-                  className={`w-5 h-5 rounded-full border transition hover:scale-110 ${
+                  className={`w-5 h-5 touch:w-auto touch:flex-1 touch:h-9 touch:max-w-12 rounded-full border transition hover:scale-110 ${
                     device.colorMode === "color" && device.color === s.hex && !partying
                       ? "border-white ring-2 ring-white/40"
                       : "border-white/10"
@@ -157,7 +158,7 @@ export function DeviceCard({ device, flash = false, onToggle, onUpdate }: Device
                 />
               ))}
               <label
-                className="relative w-5 h-5 rounded-full border border-white/20 cursor-pointer overflow-hidden hover:scale-110 transition"
+                className="relative w-5 h-5 touch:w-auto touch:flex-1 touch:h-9 touch:max-w-12 rounded-full border border-white/20 cursor-pointer overflow-hidden hover:scale-110 transition"
                 style={{ background: "conic-gradient(red, yellow, lime, cyan, blue, magenta, red)" }}
                 title="Pick any color"
               >
@@ -196,7 +197,7 @@ export function DeviceCard({ device, flash = false, onToggle, onUpdate }: Device
             <div className="flex gap-1.5 mt-3">
               <button
                 onClick={() => update({ effect: partying ? "none" : "colorloop", on: true })}
-                className={`flex-1 flex items-center justify-center gap-1 py-1 text-[10px] font-semibold rounded-lg border transition ${
+                className={`flex-1 flex items-center justify-center gap-1 py-1 touch:min-h-11 touch:text-xs text-[10px] font-semibold rounded-lg border transition ${
                   partying
                     ? "bg-fuchsia-500/20 border-fuchsia-500/40 text-fuchsia-300"
                     : "bg-neutral-800/60 border-neutral-700/50 text-neutral-400 hover:text-neutral-200"
@@ -206,7 +207,7 @@ export function DeviceCard({ device, flash = false, onToggle, onUpdate }: Device
               </button>
               <button
                 onClick={() => update({ alert: true })}
-                className="flex-1 flex items-center justify-center gap-1 py-1 text-[10px] font-semibold rounded-lg border bg-neutral-800/60 border-neutral-700/50 text-neutral-400 hover:text-neutral-200 transition"
+                className="flex-1 flex items-center justify-center gap-1 py-1 touch:min-h-11 touch:text-xs text-[10px] font-semibold rounded-lg border bg-neutral-800/60 border-neutral-700/50 text-neutral-400 hover:text-neutral-200 transition"
               >
                 <Zap className="w-3 h-3" /> Flash
               </button>
@@ -224,14 +225,14 @@ export function DeviceCard({ device, flash = false, onToggle, onUpdate }: Device
           <div className="flex items-center gap-1 bg-neutral-800/80 p-0.5 rounded-xl border border-neutral-700/60">
             <button
               onClick={() => update({ temperature: setpoint - 1 })}
-              className="w-7 h-7 rounded-lg hover:bg-neutral-700 flex items-center justify-center text-neutral-300 hover:text-white transition"
+              className="w-7 h-7 touch:w-11 touch:h-11 rounded-lg hover:bg-neutral-700 flex items-center justify-center text-neutral-300 hover:text-white transition"
               title="Decrease temperature"
             >
               <Minus className="w-3.5 h-3.5" />
             </button>
             <button
               onClick={() => update({ temperature: setpoint + 1 })}
-              className="w-7 h-7 rounded-lg hover:bg-neutral-700 flex items-center justify-center text-neutral-300 hover:text-white transition"
+              className="w-7 h-7 touch:w-11 touch:h-11 rounded-lg hover:bg-neutral-700 flex items-center justify-center text-neutral-300 hover:text-white transition"
               title="Increase temperature"
             >
               <Plus className="w-3.5 h-3.5" />
@@ -293,7 +294,7 @@ export function DeviceCard({ device, flash = false, onToggle, onUpdate }: Device
               <button
                 key={spd.label}
                 onClick={() => update({ on: spd.val > 0, intensity: spd.val })}
-                className={`flex-1 py-1 text-[10px] font-semibold rounded-lg border transition ${
+                className={`flex-1 py-1 touch:min-h-11 touch:text-xs text-[10px] font-semibold rounded-lg border transition ${
                   active
                     ? "bg-cyan-500/20 border-cyan-500/40 text-cyan-300"
                     : "bg-neutral-800/60 border-neutral-700/50 text-neutral-400 hover:text-neutral-200"

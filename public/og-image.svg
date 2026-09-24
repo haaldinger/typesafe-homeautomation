@@ -1,0 +1,78 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <defs>
+    <radialGradient id="glowBg" cx="0.27" cy="0.5" r="0.6">
+      <stop offset="0" stop-color="#3a2206"/>
+      <stop offset="0.45" stop-color="#140d05"/>
+      <stop offset="1" stop-color="#0a0a0a"/>
+    </radialGradient>
+    <radialGradient id="halo" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#f59e0b" stop-opacity="0.45"/>
+      <stop offset="1" stop-color="#f59e0b" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="tile" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#fcd34d"/>
+      <stop offset="0.5" stop-color="#f59e0b"/>
+      <stop offset="1" stop-color="#ea580c"/>
+    </linearGradient>
+    <radialGradient id="eye" cx="0.4" cy="0.35" r="0.7">
+      <stop offset="0" stop-color="#fef3c7"/>
+      <stop offset="0.45" stop-color="#fbbf24"/>
+      <stop offset="1" stop-color="#f59e0b"/>
+    </radialGradient>
+    <linearGradient id="word" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#fde68a"/>
+      <stop offset="1" stop-color="#f59e0b"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1200" height="630" fill="url(#glowBg)"/>
+
+  <!-- faint grid dots -->
+  <g fill="#ffffff" fill-opacity="0.05">
+    <circle cx="640" cy="80" r="2"/><circle cx="720" cy="80" r="2"/><circle cx="800" cy="80" r="2"/><circle cx="880" cy="80" r="2"/><circle cx="960" cy="80" r="2"/><circle cx="1040" cy="80" r="2"/><circle cx="1120" cy="80" r="2"/>
+    <circle cx="640" cy="550" r="2"/><circle cx="720" cy="550" r="2"/><circle cx="800" cy="550" r="2"/><circle cx="880" cy="550" r="2"/><circle cx="960" cy="550" r="2"/><circle cx="1040" cy="550" r="2"/><circle cx="1120" cy="550" r="2"/>
+  </g>
+
+  <!-- halo + sound waves behind the robot -->
+  <circle cx="320" cy="330" r="270" fill="url(#halo)"/>
+  <g fill="none" stroke="#f59e0b" stroke-linecap="round">
+    <path d="M250 92 Q320 52 390 92" stroke-width="6" stroke-opacity="0.55"/>
+    <path d="M215 62 Q320 5 425 62" stroke-width="5" stroke-opacity="0.3"/>
+  </g>
+
+  <!-- robot (the app icon, scaled 5x) -->
+  <g transform="translate(160 170) scale(5)">
+    <rect width="64" height="64" rx="16" fill="url(#tile)"/>
+    <line x1="32" y1="12" x2="32" y2="20" stroke="#0c0a09" stroke-width="3.5" stroke-linecap="round"/>
+    <circle cx="32" cy="10.5" r="4.5" fill="#0c0a09"/>
+    <circle cx="32" cy="10.5" r="2" fill="#fde68a"/>
+    <rect x="7" y="30" width="5" height="13" rx="2.5" fill="#0c0a09"/>
+    <rect x="52" y="30" width="5" height="13" rx="2.5" fill="#0c0a09"/>
+    <rect x="11" y="19" width="42" height="35" rx="12" fill="#0c0a09"/>
+    <circle cx="23.5" cy="34" r="5.5" fill="url(#eye)"/>
+    <circle cx="40.5" cy="34" r="5.5" fill="url(#eye)"/>
+    <circle cx="21.8" cy="32.2" r="1.6" fill="#fffbeb"/>
+    <circle cx="38.8" cy="32.2" r="1.6" fill="#fffbeb"/>
+    <path d="M24.5 45 Q32 50 39.5 45" stroke="#fbbf24" stroke-width="3" fill="none" stroke-linecap="round"/>
+  </g>
+
+  <!-- copy -->
+  <g font-family="Plus Jakarta Sans, Helvetica Neue, Helvetica, Arial, sans-serif">
+    <text x="600" y="215" font-size="96" font-weight="800" fill="url(#word)" letter-spacing="-2">Aura</text>
+    <text x="604" y="300" font-size="50" font-weight="700" fill="#ffffff" letter-spacing="-1">Talk to your home.</text>
+    <text x="604" y="352" font-size="50" font-weight="700" fill="#a3a3a3" letter-spacing="-1">It listens.</text>
+    <text x="606" y="418" font-size="24" font-weight="500" fill="#a3a3a3">Lights, music and scenes in plain English.</text>
+
+    <!-- capability chips -->
+    <g font-size="20" font-weight="600">
+      <rect x="604" y="458" width="118" height="44" rx="22" fill="#f59e0b" fill-opacity="0.14" stroke="#f59e0b" stroke-opacity="0.45"/>
+      <text x="663" y="487" text-anchor="middle" fill="#fcd34d">Lights</text>
+      <rect x="734" y="458" width="118" height="44" rx="22" fill="#f59e0b" fill-opacity="0.14" stroke="#f59e0b" stroke-opacity="0.45"/>
+      <text x="793" y="487" text-anchor="middle" fill="#fcd34d">Music</text>
+      <rect x="864" y="458" width="118" height="44" rx="22" fill="#f59e0b" fill-opacity="0.14" stroke="#f59e0b" stroke-opacity="0.45"/>
+      <text x="923" y="487" text-anchor="middle" fill="#fcd34d">Scenes</text>
+    </g>
+
+    <text x="606" y="560" font-size="18" font-weight="600" fill="#737373" letter-spacing="3">POWERED BY TYPESAFE</text>
+  </g>
+</svg>

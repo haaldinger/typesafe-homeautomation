@@ -1,5 +1,6 @@
 import { Sparkles, Lightbulb, Thermometer, Lock, Unlock, Speaker, Activity, Settings2 } from "lucide-react";
 import type { HealthInfo } from "../api.ts";
+import { AuraMark } from "./AuraMark.tsx";
 
 interface TopbarProps {
   status: {
@@ -28,29 +29,32 @@ export function Topbar({
   onOpenSettings,
   onOpenScenes,
 }: TopbarProps) {
+  const pill = "flex items-center gap-2 px-3 py-1.5 rounded-xl border text-xs whitespace-nowrap shrink-0";
+  const iconBtn =
+    "flex items-center justify-center gap-1.5 min-h-9 min-w-9 touch:min-h-11 touch:min-w-11 px-2.5 rounded-xl border text-xs font-medium transition shadow-sm";
+
   return (
-    <header className="border-b border-neutral-800/80 bg-neutral-950/70 backdrop-blur-xl sticky top-0 z-30 px-4 sm:px-8 py-3.5 transition-all">
-      <div className="max-w-7xl mx-auto flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-        <div className="flex items-center gap-3.5">
-          <div className="relative group">
-            <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-amber-500 via-orange-500 to-amber-300 flex items-center justify-center font-black text-neutral-950 text-xl shadow-lg shadow-amber-500/20 transition-all duration-300 group-hover:scale-105">
-              A
-            </div>
+    <header className="border-b border-neutral-800/80 bg-neutral-950/70 backdrop-blur-xl lg:sticky top-0 z-30 pt-[max(0.875rem,env(safe-area-inset-top))] pb-3.5 pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))] sm:pl-[max(2rem,env(safe-area-inset-left))] sm:pr-[max(2rem,env(safe-area-inset-right))] transition-all">
+      <div className="max-w-7xl mx-auto flex flex-wrap xl:flex-nowrap items-center gap-x-4 gap-y-3">
+        <div className="flex items-center gap-3 sm:gap-3.5 min-w-0 flex-1 xl:flex-none">
+          <div className="relative group shrink-0">
+            <AuraMark size={40} className="rounded-2xl shadow-lg shadow-amber-500/20 transition-transform duration-300 group-hover:scale-105" />
             <div className="absolute -inset-1 rounded-2xl bg-amber-500/20 blur-sm -z-10" />
           </div>
-          <div>
+          <div className="min-w-0">
             <h1 className="text-xl font-bold tracking-tight text-white flex items-center gap-2">
               Aura
-              <span className="text-[10px] uppercase font-semibold px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/30 tracking-wider">
+              <span className="hidden min-[400px]:inline text-[10px] uppercase font-semibold px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/30 tracking-wider whitespace-nowrap">
                 Sonos + Home
               </span>
             </h1>
-            <p className="text-xs text-neutral-400 font-medium">Smart home · powered by TypeSafe</p>
+            <p className="text-xs text-neutral-400 font-medium truncate">Smart home · powered by TypeSafe</p>
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-neutral-900/90 border border-neutral-800 text-xs text-neutral-300 shadow-inner">
+        {/* Status pills: one scrollable line on phones, wrapping on wider screens. */}
+        <div className="order-last xl:order-none w-full xl:w-auto xl:flex-1 min-w-0 -mx-1 px-1 xl:mx-0 xl:px-0 flex flex-nowrap sm:flex-wrap xl:justify-end items-center gap-2 sm:gap-3 overflow-x-auto sm:overflow-visible no-scrollbar">
+          <div className={`${pill} bg-neutral-900/90 border-neutral-800 text-neutral-300 shadow-inner`}>
             <div className={`p-1 rounded-lg ${status.on > 0 ? "bg-amber-500/20 text-amber-400" : "bg-neutral-800 text-neutral-500"}`}>
               <Lightbulb className="w-3.5 h-3.5" />
             </div>
@@ -60,7 +64,7 @@ export function Topbar({
           </div>
 
           {status.temp > 0 && (
-            <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-neutral-900/90 border border-neutral-800 text-xs text-neutral-300">
+            <div className={`${pill} bg-neutral-900/90 border-neutral-800 text-neutral-300`}>
               <div className="p-1 rounded-lg bg-emerald-500/20 text-emerald-400">
                 <Thermometer className="w-3.5 h-3.5" />
               </div>
@@ -71,7 +75,7 @@ export function Topbar({
           )}
 
           {status.locks > 0 && (
-            <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-neutral-900/90 border border-neutral-800 text-xs text-neutral-300">
+            <div className={`${pill} bg-neutral-900/90 border-neutral-800 text-neutral-300`}>
               <div className={`p-1 rounded-lg ${status.unlocked === 0 ? "bg-emerald-500/20 text-emerald-400" : "bg-rose-500/20 text-rose-400"}`}>
                 {status.unlocked === 0 ? <Lock className="w-3.5 h-3.5" /> : <Unlock className="w-3.5 h-3.5" />}
               </div>
@@ -82,7 +86,7 @@ export function Topbar({
           )}
 
           {activeZonesCount > 0 && (
-            <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-xs text-amber-300">
+            <div className={`${pill} bg-amber-500/10 border-amber-500/30 text-amber-300`}>
               <Speaker className="w-3.5 h-3.5 text-amber-400" />
               <span>
                 <strong className="text-amber-200">{activeZonesCount}</strong> {activeZonesCount === 1 ? "zone" : "zones"} playing
@@ -93,49 +97,57 @@ export function Topbar({
           {healthLoaded && (
             <button
               onClick={onOpenSettings}
-              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-[11px] font-medium ${
-                health
-                  ? "bg-neutral-900/90 border-neutral-800 text-neutral-400"
-                  : "bg-rose-500/10 border-rose-500/40 text-rose-300"
+              className={`${pill} min-h-9 touch:min-h-11 font-medium text-[11px] ${
+                !health
+                  ? "bg-rose-500/10 border-rose-500/40 text-rose-300"
+                  : health.profile === "demo"
+                    ? "bg-sky-500/10 border-sky-500/40 text-sky-300"
+                    : "bg-neutral-900/90 border-neutral-800 text-neutral-400"
               }`}
-              title="Backend status"
+              title="Mode and backend status (click to switch Demo / Home)"
             >
-              <span className={`w-1.5 h-1.5 rounded-full ${health ? "bg-emerald-400" : "bg-rose-400"}`} />
-              {health ? `sonos: ${health.sonos ?? "?"}` : "backend offline"}
+              <span
+                className={`w-1.5 h-1.5 rounded-full ${!health ? "bg-rose-400" : health.profile === "demo" ? "bg-sky-400" : "bg-emerald-400"}`}
+              />
+              {!health ? "backend offline" : health.profile === "demo" ? "Demo mode" : `Home · ${health.gateway} + sonos ${health.sonos ?? "?"}`}
             </button>
           )}
+        </div>
 
-          <div className="flex items-center gap-1.5 ml-auto md:ml-2">
-            <button
-              onClick={onOpenScenes}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-neutral-900 hover:bg-neutral-800 border border-neutral-800 hover:border-neutral-700 text-xs font-medium text-neutral-200 hover:text-white transition shadow-sm"
-              title="Quick scenes"
-            >
-              <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-              <span className="hidden sm:inline">Scenes</span>
-            </button>
+        <div className="flex items-center gap-1.5 shrink-0">
+          <button
+            onClick={onOpenScenes}
+            className={`${iconBtn} bg-neutral-900 hover:bg-neutral-800 border-neutral-800 hover:border-neutral-700 text-neutral-200 hover:text-white`}
+            title="Quick scenes"
+            aria-label="Quick scenes"
+          >
+            <Sparkles className="w-4 h-4 sm:w-3.5 sm:h-3.5 text-amber-400" />
+            <span className="hidden sm:inline">Scenes</span>
+          </button>
 
-            <button
-              onClick={onToggleInspector}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-medium transition shadow-sm ${
-                inspectorOpen
-                  ? "bg-amber-500/15 border-amber-500/40 text-amber-300 hover:bg-amber-500/25"
-                  : "bg-neutral-900 border-neutral-800 text-neutral-300 hover:bg-neutral-800 hover:border-neutral-700"
-              }`}
-              title="Toggle decision trace"
-            >
-              <Activity className="w-3.5 h-3.5 text-amber-400" />
-              <span className="hidden sm:inline">Trace</span>
-            </button>
+          <button
+            onClick={onToggleInspector}
+            className={`${iconBtn} ${
+              inspectorOpen
+                ? "bg-amber-500/15 border-amber-500/40 text-amber-300 hover:bg-amber-500/25"
+                : "bg-neutral-900 border-neutral-800 text-neutral-300 hover:bg-neutral-800 hover:border-neutral-700"
+            }`}
+            title="Toggle decision trace"
+            aria-label="Toggle decision trace"
+            aria-pressed={inspectorOpen}
+          >
+            <Activity className="w-4 h-4 sm:w-3.5 sm:h-3.5 text-amber-400" />
+            <span className="hidden sm:inline">Trace</span>
+          </button>
 
-            <button
-              onClick={onOpenSettings}
-              className="p-1.5 rounded-xl bg-neutral-900 hover:bg-neutral-800 border border-neutral-800 hover:border-neutral-700 text-neutral-400 hover:text-neutral-200 transition shadow-sm"
-              title="Backend settings"
-            >
-              <Settings2 className="w-4 h-4" />
-            </button>
-          </div>
+          <button
+            onClick={onOpenSettings}
+            className={`${iconBtn} bg-neutral-900 hover:bg-neutral-800 border-neutral-800 hover:border-neutral-700 text-neutral-400 hover:text-neutral-200`}
+            title="Backend settings"
+            aria-label="Backend settings"
+          >
+            <Settings2 className="w-4 h-4" />
+          </button>
         </div>
       </div>
     </header>

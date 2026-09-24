@@ -74,7 +74,12 @@ export interface HealthInfo {
   sonos?: string;
   spotify?: boolean;
   spotifyLinked?: boolean;
+  /** "demo" = simulated house + mock speakers; "home" = real devices from .env. */
+  profile?: "demo" | "home";
 }
+
+export const setProfile = (profile: "demo" | "home") =>
+  postJson<{ profile: string; gateway: string; sonos: string }>("/api/profile", { profile }, "switch mode");
 
 /** GET /api/stations */
 export interface StationInfo {

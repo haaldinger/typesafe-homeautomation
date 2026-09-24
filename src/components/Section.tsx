@@ -23,6 +23,8 @@ interface SectionProps {
   onDragEnter: () => void;
   onDrop: () => void;
   onDragEnd: () => void;
+  /** False on touch screens, where HTML5 drag-and-drop doesn't work. */
+  draggable?: boolean;
   dragging?: boolean;
   over?: boolean;
   children: ReactNode;
@@ -40,6 +42,7 @@ export function Section({
   onDragEnter,
   onDrop,
   onDragEnd,
+  draggable = true,
   dragging = false,
   over = false,
   children,
@@ -48,13 +51,13 @@ export function Section({
 }: SectionProps) {
   return (
     <section
-      draggable
+      draggable={draggable}
       onDragStart={onDragStart}
       onDragEnter={onDragEnter}
       onDragOver={(e) => e.preventDefault()}
       onDrop={onDrop}
       onDragEnd={onDragEnd}
-      className={`rounded-3xl border transition-all duration-200 mb-6 overflow-hidden ${
+      className={`rounded-3xl border transition-all duration-200 mb-4 sm:mb-6 overflow-hidden ${
         dragging
           ? "opacity-40 scale-[0.98] border-amber-500/50 shadow-2xl"
           : over
@@ -62,16 +65,22 @@ export function Section({
             : "border-neutral-800/80 bg-neutral-950/40 hover:border-neutral-700/60"
       }`}
     >
-      <div className="flex items-center justify-between p-4 sm:px-6 sm:py-4 bg-neutral-900/40 hover:bg-neutral-900/60 transition select-none">
-        <div className="flex items-center gap-3 min-w-0">
-          <span
-            className="cursor-grab active:cursor-grabbing p-1 text-neutral-600 hover:text-neutral-300 transition"
-            title="Drag to reorder section"
-          >
-            <GripVertical className="w-4 h-4" />
-          </span>
+      <div className="flex items-center justify-between gap-2 p-3 sm:px-6 sm:py-4 bg-neutral-900/40 hover:bg-neutral-900/60 transition select-none">
+        <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
+          {draggable && (
+            <span
+              className="cursor-grab active:cursor-grabbing p-1 text-neutral-600 hover:text-neutral-300 transition shrink-0"
+              title="Drag to reorder section"
+            >
+              <GripVertical className="w-4 h-4" />
+            </span>
+          )}
 
-          <button onClick={onToggle} className="flex items-center gap-3 text-left focus:outline-none group min-w-0" aria-expanded={!collapsed}>
+          <button
+            onClick={onToggle}
+            className="flex flex-1 items-center gap-3 py-1 touch:min-h-11 text-left focus:outline-none group min-w-0"
+            aria-expanded={!collapsed}
+          >
             <div className="p-1 rounded-lg bg-neutral-800/80 group-hover:bg-neutral-700/80 text-neutral-400 group-hover:text-white transition shrink-0">
               {collapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
             </div>
@@ -102,7 +111,8 @@ export function Section({
               e.stopPropagation();
               onQuickAction();
             }}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-neutral-800/60 hover:bg-neutral-800 border border-neutral-700/60 text-xs font-semibold text-neutral-300 hover:text-white transition"
+            className="shrink-0 flex items-center justify-center gap-1.5 px-3 py-1.5 touch:min-h-11 touch:min-w-11 rounded-xl bg-neutral-800/60 hover:bg-neutral-800 border border-neutral-700/60 text-xs font-semibold text-neutral-300 hover:text-white transition"
+            aria-label={quickActionLabel || "Toggle"}
           >
             <Power className="w-3.5 h-3.5 text-amber-400" />
             <span className="hidden sm:inline">{quickActionLabel || "Toggle"}</span>
@@ -110,7 +120,7 @@ export function Section({
         )}
       </div>
 
-      {!collapsed && <div className="p-4 sm:p-6 pt-2">{children}</div>}
+      {!collapsed && <div className="p-3 sm:p-6 pt-2 sm:pt-2">{children}</div>}
     </section>
   );
 }
