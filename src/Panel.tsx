@@ -35,16 +35,36 @@ export default function Panel() {
   const clock = useClock();
   const real = Boolean(health && health.gateway !== "sim");
 
+  const [homeError, setHomeError] = useState<string | null>(null);
+  const loadHome = () =>
+    fetchHome()
+      .then((h) => {
+        setHome(h);
+        setHomeError(null);
+      })
+      .catch((e) => setHomeError(e instanceof Error ? e.message : "Unknown error"));
+
   useEffect(() => {
+    // The simulated (demo) house lives in this page, not on the server: /api/home always
+    // returns the starting state, so it's loaded once and never polled over local changes.
+    loadHome();
     const load = () => {
       fetchHealth().then(setHealth).catch(() => setHealth(null));
-      fetchHome().then(setHome).catch(() => {});
       fetchZones().then(setZones).catch(() => {});
     };
     load();
     const id = window.setInterval(load, 5000);
     return () => window.clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Real lights change outside the panel too (Hue app, wall switches), so poll those.
+  useEffect(() => {
+    if (!real) return;
+    const id = window.setInterval(loadHome, 5000);
+    return () => window.clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [real]);
 
   // Status messages clear themselves so the panel returns to rest.
   useEffect(() => {
@@ -62,7 +82,12 @@ export default function Panel() {
   );
 
   async function runScene(id: string, command: string) {
-    if (!home || busy) return;
+    if (busy) return;
+    if (!home) {
+      setStatus({ text: homeError ? `Couldn't load your devices (${homeError}).` : "Still loading your devices…", error: true });
+      if (homeError) loadHome();
+      return;
+    }
     setBusy(id);
     try {
       const res = await sendCommand(command, home);
@@ -123,8 +148,15 @@ export default function Panel() {
       </header>
 
       <div className="shrink-0 w-full max-w-5xl mx-auto px-4 min-h-[2.25rem]" aria-live="polite">
-        {status && (
+        {status ? (
           <p className={`text-sm leading-snug line-clamp-2 ${status.error ? "text-rose-300" : "text-amber-200"}`}>{status.text}</p>
+        ) : (
+          !home &&
+          homeError && (
+            <p className="text-sm leading-snug line-clamp-2 text-rose-300">
+              Couldn't load your devices ({homeError}).{health?.profile === "home" ? " The server can't reach your lights hub." : ""}
+            </p>
+          )
         )}
       </div>
 

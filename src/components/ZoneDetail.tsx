@@ -126,6 +126,7 @@ export function ZoneDetail({
     });
   }
   const isPlaying = zone.playback === "playing";
+  const unreachable = zone.reachable === false;
   const track = zone.track;
   const pct = zone.duration ? Math.min(100, ((zone.elapsed ?? 0) / zone.duration) * 100) : 0;
 
@@ -407,17 +408,23 @@ export function ZoneDetail({
                   <Music2 className="w-16 h-16" />
                 </div>
               )}
-              <div className="absolute top-3 left-3 px-2.5 py-1 rounded-lg bg-black/70 backdrop-blur-md text-[11px] font-semibold tracking-wide text-white border border-white/10 uppercase">
-                {zone.playback}
+              <div
+                className={`absolute top-3 left-3 px-2.5 py-1 rounded-lg backdrop-blur-md text-[11px] font-semibold tracking-wide border uppercase ${
+                  unreachable ? "bg-rose-950/70 text-rose-300 border-rose-500/40" : "bg-black/70 text-white border-white/10"
+                }`}
+              >
+                {unreachable ? "unreachable" : zone.playback}
               </div>
             </div>
 
             <div className={`w-full min-w-0 flex flex-col gap-4 text-center ${wide ? "md:flex-1 short:gap-3" : "short:gap-3"}`}>
               <div className="min-w-0">
                 <h3 className={`font-bold text-white tracking-tight break-words ${wide ? "text-xl md:text-2xl short:text-xl" : "text-xl"}`}>
-                  {track?.title || "Nothing playing"}
+                  {unreachable ? "Speaker unreachable" : track?.title || "Nothing playing"}
                 </h3>
-                <p className="text-sm text-neutral-400 font-medium mt-0.5 truncate">{track?.artist || "Pick a station or track"}</p>
+                <p className="text-sm text-neutral-400 font-medium mt-0.5 truncate">
+                  {unreachable ? "Couldn't reach this speaker on the network" : track?.artist || "Pick a station or track"}
+                </p>
                 {track?.album && <p className="text-xs text-neutral-500 mt-0.5 truncate">{track.album}</p>}
                 {liveLine && (
                   <div className={`mt-3 ${wide ? "md:mt-4 min-h-[3.5rem] md:min-h-[4.5rem] short:md:min-h-[3.5rem]" : "min-h-[3.5rem]"}`} aria-live="polite">

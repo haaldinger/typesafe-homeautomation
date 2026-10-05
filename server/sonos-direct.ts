@@ -27,6 +27,15 @@ export function directHosts(): string[] {
     .filter(Boolean);
 }
 
+function configuredRoomName(ip: string): string | undefined {
+  const entry = (process.env.SONOS_NAMES ?? "")
+    .split(",")
+    .map((s) => s.trim())
+    .find((s) => s.startsWith(`${ip}=`));
+  const name = entry?.slice(ip.length + 1).trim();
+  return name || undefined;
+}
+
 export function directEnabled(): boolean {
   return !isDemo() && directHosts().length > 0;
 }
@@ -125,7 +134,7 @@ async function roomName(ip: string): Promise<string> {
     if (udn) uuidCache.set(ip, udn);
     return name;
   } catch {
-    return ip;
+    return configuredRoomName(ip) ?? ip;
   }
 }
 
@@ -134,9 +143,33 @@ async function uuidForIp(ip: string): Promise<string | undefined> {
   return uuidCache.get(ip);
 }
 
+async function groupDirect(coordinatorZoneId: string, memberNames: string[]): Promise<void> {
+  const coordinatorIp = await ipForZone(coordinatorZoneId);
+  if (!coordinatorIp) return;
+  const coordinatorUuid = await uuidForIp(coordinatorIp);
+  if (!coordinatorUuid) throw new Error(`Couldn't identify Sonos coordinator ${coordinatorZoneId}`);
+
+  for (const memberName of memberNames) {
+    const memberIp = await ipForZone(slug(memberName));
+    if (!memberIp || memberIp === coordinatorIp) continue;
+    await soap(
+      memberIp,
+      AV,
+      "SetAVTransportURI",
+      `${IID}<CurrentURI>x-rincon:${coordinatorUuid}</CurrentURI><CurrentURIMetaData></CurrentURIMetaData>`,
+    );
+  }
+}
+
+async function ungroupDirect(zoneId: string): Promise<void> {
+  const ip = await ipForZone(zoneId);
+  if (!ip) return;
+  await soap(ip, AV, "BecomeCoordinatorOfStandaloneGroup", IID);
+}
+
 async function zoneFor(ip: string): Promise<SonosZone> {
   const name = await roomName(ip);
-  const base: SonosZone = { id: slug(name), name, playback: "stopped", track: null, volume: 20, groupedWith: [] };
+  const base: SonosZone = { id: slug(name), name, playback: "stopped", track: null, volume: 20, groupedWith: [], reachable: true };
   try {
     const [transport, position, volume] = await Promise.all([
       soap(ip, AV, "GetTransportInfo", IID),
@@ -185,7 +218,8 @@ async function zoneFor(ip: string): Promise<SonosZone> {
       }
     }
   } catch {
-    // Leave defaults if the speaker didn't answer.
+    // The speaker didn't answer; the fields above are stale defaults, not live state.
+    base.reachable = false;
   }
   return base;
 }
@@ -589,8 +623,13 @@ export async function applyDirect(actions: AudioAction[]): Promise<void> {
       case "play_station":
         if (a.uri) await playRadioDirect(a.zone, a.uri, a.name ?? a.chips[0] ?? "Radio");
         break;
+      case "group":
+        await groupDirect(a.zone, a.chips.filter((name) => name !== a.zoneName));
+        break;
+      case "ungroup":
+        await ungroupDirect(a.zone);
+        break;
       default:
-        // group/ungroup need topology; single-speaker setups can skip.
         break;
     }
   }

@@ -136,7 +136,26 @@ export function Inspector({ result, onCollapse }: InspectorProps) {
 
   const copyJson = () => {
     if (!result) return;
-    void navigator.clipboard.writeText(JSON.stringify(result, null, 2));
+    const text = JSON.stringify(result, null, 2);
+    // navigator.clipboard only exists in secure contexts (https or localhost), not when a
+    // phone opens the dev server by LAN IP; fall back to a hidden textarea there.
+    if (navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText(text).catch(() => {});
+    } else {
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      ta.setAttribute("readonly", "");
+      ta.style.position = "fixed";
+      ta.style.opacity = "0";
+      document.body.appendChild(ta);
+      ta.select();
+      try {
+        document.execCommand("copy");
+      } catch {
+        // Nothing else to try.
+      }
+      ta.remove();
+    }
     setCopied(true);
     window.setTimeout(() => setCopied(false), 2000);
   };

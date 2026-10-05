@@ -115,6 +115,36 @@ export interface SonosZone {
   /** Playback position + length in seconds, for the progress bar. */
   elapsed?: number;
   duration?: number;
+  /** False when the speaker didn't answer; other fields are stale defaults, not live state. */
+  reachable?: boolean;
+}
+
+/** Normalized aircraft data used by the wall-panel radar. */
+export interface NearbyAircraft {
+  id: string;
+  callsign: string;
+  flightNumber?: string;
+  operator?: string;
+  type?: string;
+  latitude: number;
+  longitude: number;
+  altitudeFeet?: number;
+  speedKnots?: number;
+  heading?: number;
+  origin?: string;
+  destination?: string;
+  distanceNm?: number;
+  bearingDeg?: number;
+  lastSeen: string;
+}
+
+export interface FlightResponse {
+  airport: string;
+  airportName: string;
+  updatedAt: string;
+  stale: boolean;
+  source: "demo" | "home_assistant" | "opensky" | "unavailable";
+  aircraft: NearbyAircraft[];
 }
 
 /** One track in a zone's play queue. */

@@ -78,15 +78,16 @@ function applyMock(action: AudioAction): void {
     case "stop":
       zone.playback = "stopped";
       break;
-    case "next": {
-      const i = DEMO_TRACKS.findIndex((t) => t.title === zone.track?.title);
-      setTrack(zone, DEMO_TRACKS[(i + 1 + DEMO_TRACKS.length) % DEMO_TRACKS.length]);
-      zone.playback = "playing";
-      break;
-    }
+    case "next":
     case "previous": {
-      const i = DEMO_TRACKS.findIndex((t) => t.title === zone.track?.title);
-      setTrack(zone, DEMO_TRACKS[(i - 1 + DEMO_TRACKS.length) % DEMO_TRACKS.length]);
+      // Step through this zone's queue (which Spotify adds to), wrapping around.
+      const q = mockQueueFor(zone.id);
+      const list = q.length ? q : DEMO_TRACKS;
+      const i = currentIndex(zone);
+      const step = action.kind === "next" ? 1 : -1;
+      const n = i < 0 ? 0 : (i + step + list.length) % list.length;
+      setTrack(zone, list[n]);
+      mockCurrent.set(zone.id, n);
       zone.playback = "playing";
       break;
     }
@@ -130,6 +131,17 @@ function applyMock(action: AudioAction): void {
 // ---- Mock queue -------------------------------------------------------------
 
 const mockQueues = new Map<string, { title: string; artist: string; duration: number }[]>();
+/** Queue index of the playing track, so a song queued twice still steps forward. */
+const mockCurrent = new Map<string, number>();
+
+function currentIndex(zone: SonosZone): number {
+  const q = mockQueueFor(zone.id);
+  const same = (t: { title: string; artist: string } | undefined) =>
+    Boolean(t && t.title === zone.track?.title && t.artist === zone.track?.artist);
+  const known = mockCurrent.get(zone.id);
+  if (known !== undefined && same(q[known])) return known;
+  return q.findIndex(same);
+}
 
 function mockQueueFor(id: string): { title: string; artist: string; duration: number }[] {
   if (!mockQueues.has(id)) mockQueues.set(id, DEMO_TRACKS.map((t) => ({ ...t })));
@@ -138,11 +150,12 @@ function mockQueueFor(id: string): { title: string; artist: string; duration: nu
 
 function getMockQueue(id: string): QueueTrack[] {
   const zone = zoneById(id);
+  const cur = zone ? currentIndex(zone) : -1;
   return mockQueueFor(id).map((t, i) => ({
     position: i + 1,
     title: t.title,
     artist: t.artist,
-    ...(zone?.track?.title === t.title ? { current: true } : {}),
+    ...(i === cur ? { current: true } : {}),
   }));
 }
 
@@ -153,10 +166,13 @@ function queueControlMock(id: string, op: "play" | "remove", position: number): 
     const zone = zoneById(id);
     if (t && zone) {
       setTrack(zone, t);
+      mockCurrent.set(id, position - 1);
       zone.playback = "playing";
     }
   } else {
+    const cur = mockCurrent.get(id);
     q.splice(position - 1, 1);
+    if (cur !== undefined && position - 1 < cur) mockCurrent.set(id, cur - 1);
   }
 }
 
@@ -385,13 +401,22 @@ export const sonosGateway: SonosGateway = {
       await sonosApi(`/${room}/spotify/${mode === "end" ? "queue" : "now"}/${encodeURIComponent(uri)}`);
       return;
     }
+    // Mock: the client sends "Song — Artist"; split it so lyrics and "Similar" can use the
+    // artist, and put the track in the queue like a real speaker would.
     const zone = zoneById(zoneId);
-    if (zone && mode === "now") {
-      zone.track = { title: title ?? "Spotify track", artist: "Spotify" };
-      zone.playback = "playing";
-      zone.duration = 0;
-      zone.elapsed = 0;
+    if (!zone) return;
+    const [song, ...rest] = (title ?? "Spotify track").split(" — ");
+    const t = { title: song.trim() || "Spotify track", artist: rest.join(" — ").trim() || "Spotify", duration: 210 };
+    const q = mockQueueFor(zoneId);
+    if (mode === "end") {
+      q.push(t);
+      return;
     }
+    const cur = currentIndex(zone);
+    q.splice(cur + 1, 0, t);
+    setTrack(zone, t);
+    mockCurrent.set(zoneId, cur + 1);
+    zone.playback = "playing";
   },
   spotifyLinked() {
     return directEnabled() ? directSpotifyLinked() : true;
@@ -432,4 +457,6 @@ export const sonosGateway: SonosGateway = {
 /** Reset mock zones (used by /api/reset). */
 export function resetMockZones(): void {
   mockZones = freshZones();
+  mockQueues.clear();
+  mockCurrent.clear();
 }

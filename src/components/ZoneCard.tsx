@@ -11,6 +11,7 @@ interface ZoneCardProps {
 
 export function ZoneCard({ zone, flash = false, onControl, onOpen }: ZoneCardProps) {
   const isPlaying = zone.playback === "playing";
+  const unreachable = zone.reachable === false;
   const track = zone.track;
   const progressPercent = zone.duration
     ? Math.min(100, Math.round(((zone.elapsed ?? 0) / zone.duration) * 100))
@@ -60,8 +61,13 @@ export function ZoneCard({ zone, flash = false, onControl, onOpen }: ZoneCardPro
         </button>
       </div>
 
-      {/* Artwork + track info */}
-      <div className="px-4 py-2 flex items-center gap-4 min-w-0">
+      {/* Artwork + track info: tapping it opens the full controller, like the expand button. */}
+      <button
+        type="button"
+        onClick={onOpen}
+        className="w-full px-4 py-2 flex items-center gap-4 min-w-0 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/40 rounded-xl"
+        aria-label={`Open ${zone.name}: ${track?.title || "nothing playing"}`}
+      >
         <div className="relative shrink-0 w-20 h-20">
           <div
             className={`absolute top-0 right-0 w-20 h-20 rounded-full bg-neutral-950 border-2 border-neutral-700/80 flex items-center justify-center shadow-lg transition-transform duration-500 ${
@@ -100,15 +106,23 @@ export function ZoneCard({ zone, flash = false, onControl, onOpen }: ZoneCardPro
 
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-1.5 mb-1">
-            <span className="text-[10px] uppercase font-bold tracking-wider px-1.5 py-0.5 rounded bg-neutral-800 text-neutral-300 border border-neutral-700">
-              {zone.playback}
+            <span
+              className={`text-[10px] uppercase font-bold tracking-wider px-1.5 py-0.5 rounded border ${
+                unreachable
+                  ? "bg-rose-950/60 text-rose-300 border-rose-500/40"
+                  : "bg-neutral-800 text-neutral-300 border-neutral-700"
+              }`}
+            >
+              {unreachable ? "unreachable" : zone.playback}
             </span>
           </div>
 
           <h4 className="text-sm font-semibold text-neutral-100 truncate group-hover:text-amber-300 transition">
-            {track?.title || "Nothing playing"}
+            {unreachable ? "Speaker unreachable" : track?.title || "Nothing playing"}
           </h4>
-          <p className="text-xs text-neutral-400 truncate">{track?.artist || "Pick a station or track"}</p>
+          <p className="text-xs text-neutral-400 truncate">
+            {unreachable ? "Couldn't reach this speaker on the network" : track?.artist || "Pick a station or track"}
+          </p>
 
           {zone.duration ? (
             <div className="mt-2 space-y-1">
@@ -125,14 +139,15 @@ export function ZoneCard({ zone, flash = false, onControl, onOpen }: ZoneCardPro
             </div>
           ) : null}
         </div>
-      </div>
+      </button>
 
       {/* Transport + volume */}
       <div className="p-4 pt-3 mt-1 border-t border-neutral-800/80 bg-neutral-950/40 flex flex-col gap-3">
         <div className="flex items-center gap-1.5">
           <button
             onClick={() => onControl("previous")}
-            className="p-1.5 touch:min-w-11 touch:min-h-11 flex items-center justify-center rounded-lg hover:bg-neutral-800 text-neutral-400 hover:text-white transition"
+            disabled={unreachable}
+            className="p-1.5 touch:min-w-11 touch:min-h-11 flex items-center justify-center rounded-lg hover:bg-neutral-800 text-neutral-400 hover:text-white transition disabled:opacity-40 disabled:hover:bg-transparent disabled:cursor-not-allowed"
             title="Previous track"
           >
             <SkipBack className="w-4 h-4" />
@@ -140,7 +155,8 @@ export function ZoneCard({ zone, flash = false, onControl, onOpen }: ZoneCardPro
 
           <button
             onClick={() => onControl(isPlaying ? "pause" : "play")}
-            className={`p-2.5 touch:min-w-11 touch:min-h-11 rounded-xl font-bold flex items-center justify-center transition shadow-md ${
+            disabled={unreachable}
+            className={`p-2.5 touch:min-w-11 touch:min-h-11 rounded-xl font-bold flex items-center justify-center transition shadow-md disabled:opacity-40 disabled:cursor-not-allowed ${
               isPlaying
                 ? "bg-amber-500 text-neutral-950 hover:bg-amber-400 shadow-amber-500/25 ring-2 ring-amber-400/40"
                 : "bg-white text-neutral-950 hover:bg-neutral-200"
@@ -152,7 +168,8 @@ export function ZoneCard({ zone, flash = false, onControl, onOpen }: ZoneCardPro
 
           <button
             onClick={() => onControl("next")}
-            className="p-1.5 touch:min-w-11 touch:min-h-11 flex items-center justify-center rounded-lg hover:bg-neutral-800 text-neutral-400 hover:text-white transition"
+            disabled={unreachable}
+            className="p-1.5 touch:min-w-11 touch:min-h-11 flex items-center justify-center rounded-lg hover:bg-neutral-800 text-neutral-400 hover:text-white transition disabled:opacity-40 disabled:hover:bg-transparent disabled:cursor-not-allowed"
             title="Next track"
           >
             <SkipForward className="w-4 h-4" />
@@ -168,8 +185,9 @@ export function ZoneCard({ zone, flash = false, onControl, onOpen }: ZoneCardPro
             min="0"
             max="100"
             value={zone.volume}
+            disabled={unreachable}
             onChange={(e) => onControl("set_volume", parseInt(e.target.value, 10))}
-            className="flex-1 accent-amber-500"
+            className="flex-1 accent-amber-500 disabled:opacity-40 disabled:cursor-not-allowed"
             aria-label={`${zone.name} volume`}
           />
           <span className="text-xs font-mono font-medium text-neutral-300 w-8 text-right">{zone.volume}%</span>

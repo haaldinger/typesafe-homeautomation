@@ -21,6 +21,8 @@ import { Inspector } from "./components/Inspector.tsx";
 import { Topbar } from "./components/Topbar.tsx";
 import { QuickScenes } from "./components/QuickScenes.tsx";
 import { SettingsModal } from "./components/SettingsModal.tsx";
+import { WallPanelShell } from "./components/WallPanelShell.tsx";
+import { type WallPanelView } from "./components/WallPanelNav.tsx";
 import {
   fetchHealth,
   fetchHome,
@@ -32,6 +34,7 @@ import {
   stopPattern,
   fetchZones,
   fetchStations,
+  fetchFlights,
   fetchQueue,
   queueControl,
   playFavorite,
@@ -169,8 +172,12 @@ function writeStorage(key: string, value: unknown): void {
 
 export default function App() {
   const [home, setHome] = useState<HomeState | null>(null);
+  // Why the house couldn't be loaded (e.g. Home mode with the hub unreachable). Without a
+  // home, typed commands and device controls can't run, so this is shown prominently.
+  const [homeError, setHomeError] = useState<string | null>(null);
   const [zones, setZones] = useState<SonosZone[]>([]);
   const [stations, setStations] = useState<StationInfo[]>([]);
+  const [flights, setFlights] = useState<import("../shared/types.ts").FlightResponse | null>(null);
   const [detailZoneId, setDetailZoneId] = useState<string | null>(null);
   const [queue, setQueue] = useState<QueueTrack[]>([]);
   const [health, setHealth] = useState<HealthInfo | null>(null);
@@ -192,6 +199,7 @@ export default function App() {
 
   const [showScenes, setShowScenes] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [wallPanelView, setWallPanelView] = useState<WallPanelView>("home");
 
   // Collapsible + reorderable sections (persisted)
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set(readStorage<string[]>("aura.collapsed", [])));
@@ -220,6 +228,19 @@ export default function App() {
   // HTML5 drag-and-drop only works with a mouse; on touch screens it just gets in the way.
   const canDrag = useMemo(() => window.matchMedia?.("(pointer: fine)").matches ?? true, []);
 
+  // While a full-screen modal or the trace sheet is open, the page behind must not scroll
+  // (on iOS a swipe on the overlay otherwise drags the whole page underneath).
+  const overlayOpen = Boolean(detailZoneId) || showSettings || (inspectorOpen && !isWide());
+  useEffect(() => {
+    if (!overlayOpen) return;
+    const html = document.documentElement;
+    const prev = html.style.overflow;
+    html.style.overflow = "hidden";
+    return () => {
+      html.style.overflow = prev;
+    };
+  }, [overlayOpen]);
+
   // Escape closes the trace sheet on narrow screens.
   useEffect(() => {
     if (!inspectorOpen) return;
@@ -241,10 +262,27 @@ export default function App() {
     });
   }
 
+  function collapseAllSections(ids: string[]) {
+    setCollapsed(new Set(ids));
+    writeStorage("aura.collapsed", ids);
+  }
+
+  const loadHome = () =>
+    fetchHome()
+      .then((h) => {
+        setHome(h);
+        setHomeError(null);
+      })
+      .catch((e) => {
+        setHome(null);
+        setHomeError(e instanceof Error ? e.message : "Unknown error");
+      });
+
   const loadAll = () => {
-    fetchHome().then(setHome).catch(() => setHome(null));
+    loadHome();
     fetchZones().then(setZones).catch(() => setZones([]));
     fetchStations().then(setStations).catch(() => setStations([]));
+    fetchFlights().then(setFlights).catch(() => setFlights(null));
     fetchHealth()
       .then(setHealth)
       .catch(() => setHealth(null))
@@ -254,6 +292,14 @@ export default function App() {
   useEffect(() => {
     loadAll();
   }, []);
+
+  useEffect(() => {
+    if (wallPanelView !== "flights") return;
+    const refresh = () => fetchFlights().then(setFlights).catch(() => setFlights(null));
+    refresh();
+    const id = window.setInterval(refresh, 15000);
+    return () => window.clearInterval(id);
+  }, [wallPanelView]);
 
   // Smoothly advance the progress bar for playing zones.
   useEffect(() => {
@@ -299,7 +345,13 @@ export default function App() {
   useEffect(() => {
     if (!realDevices) return;
     const refresh = () => {
-      fetchHome().then(setHome).catch(() => {});
+      fetchHome()
+        .then((h) => {
+          setHome(h);
+          setHomeError(null);
+        })
+        // Keep showing the last good state; only surface the error when there's nothing to show.
+        .catch((e) => setHomeError(e instanceof Error ? e.message : "Unknown error"));
       fetchPatterns().then(setPatterns).catch(() => {});
     };
     refresh();
@@ -349,6 +401,11 @@ export default function App() {
   const showError = (e: unknown, fallback: string) =>
     setReply({ text: e instanceof Error ? e.message : fallback, error: true });
 
+  // Dragging a volume slider fires a change per step; send only the latest value per zone,
+  // and ignore responses that would snap the slider back to an older value mid-drag.
+  const volumeTimers = useRef(new Map<string, number>());
+  const volumeSeq = useRef(new Map<string, number>());
+
   async function onZoneControl(zoneId: string, action: string, value?: number, station?: string) {
     // Optimistic update so touch feels instant.
     setZones((zs) =>
@@ -360,9 +417,27 @@ export default function App() {
         return z;
       }),
     );
+    if (action === "set_volume") {
+      window.clearTimeout(volumeTimers.current.get(zoneId));
+      const seq = (volumeSeq.current.get(zoneId) ?? 0) + 1;
+      volumeSeq.current.set(zoneId, seq);
+      volumeTimers.current.set(
+        zoneId,
+        window.setTimeout(() => {
+          zoneControl(zoneId, action, value)
+            .then((zs) => volumeSeq.current.get(zoneId) === seq && setZones(zs))
+            .catch((e) => {
+              showError(e, "Couldn't reach the speaker.");
+              fetchZones().then(setZones).catch(() => {});
+            });
+        }, 120),
+      );
+      return;
+    }
     try {
       setZones(await zoneControl(zoneId, action, value, station));
-    } catch {
+    } catch (e) {
+      showError(e, "Couldn't reach the speaker.");
       fetchZones().then(setZones).catch(() => {});
     }
     if (detailZoneId === zoneId) fetchQueue(zoneId).then(setQueue).catch(() => {});
@@ -372,7 +447,8 @@ export default function App() {
     if (!detailZoneId) return;
     try {
       setQueue(await queueControl(detailZoneId, op, position));
-    } catch {
+    } catch (e) {
+      showError(e, "Couldn't change the queue.");
       fetchQueue(detailZoneId).then(setQueue).catch(() => {});
     }
     fetchZones().then(setZones).catch(() => {});
@@ -804,12 +880,53 @@ export default function App() {
                 Can't reach the Aura server. Start it with <code className="font-mono">npm run dev</code> and reload.
               </div>
             )}
+            {health && !home && homeError && (
+              <div className="mb-6 p-4 rounded-2xl bg-rose-950/30 border border-rose-500/40 text-sm text-rose-200 flex flex-col sm:flex-row sm:items-center gap-3">
+                <div className="flex items-start gap-2.5 min-w-0 flex-1">
+                  <AlertCircle className="w-5 h-5 shrink-0 text-rose-400" />
+                  <p className="min-w-0 break-words">
+                    Couldn't load your devices ({homeError}), so commands and controls are paused.
+                    {health.profile === "home"
+                      ? " The server is in Home mode and can't reach your lights hub. Switch to Demo in Settings, or check the hub and retry."
+                      : " Retry in a moment."}
+                  </p>
+                </div>
+                <div className="flex gap-2 shrink-0">
+                  <button
+                    onClick={() => loadAll()}
+                    className="px-3.5 py-1.5 touch:min-h-11 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 border border-rose-500/40 text-xs font-semibold text-rose-100 transition"
+                  >
+                    Retry
+                  </button>
+                  <button
+                    onClick={() => setShowSettings(true)}
+                    className="px-3.5 py-1.5 touch:min-h-11 rounded-xl bg-neutral-900 hover:bg-neutral-800 border border-neutral-700 text-xs font-semibold text-neutral-200 transition"
+                  >
+                    Settings
+                  </button>
+                </div>
+              </div>
+            )}
             {health && !health.typesafe && (
               <div className="mb-6 p-4 rounded-2xl bg-amber-950/30 border border-amber-500/40 text-sm text-amber-200">
                 No <code className="font-mono">TYPESAFE_API_KEY</code> found. Add it to <code className="font-mono">.env</code> and
                 restart the server to enable natural-language control.
               </div>
             )}
+
+            <WallPanelShell
+              view={wallPanelView}
+              home={home}
+              zones={zones}
+              health={health}
+              flights={flights}
+              status={status}
+              sectionCount={orderedSections.length}
+              onChangeView={setWallPanelView}
+              onOpenScenes={() => setShowScenes((s) => !s)}
+              onCollapseAll={() => collapseAllSections(orderedSections.map((section) => section.id))}
+              onOpenZone={setDetailZoneId}
+            />
 
             {showScenes && (
               <QuickScenes
@@ -983,7 +1100,7 @@ export default function App() {
           stations={stations}
           allZones={zones}
           spotifyEnabled={Boolean(health?.spotify)}
-          groupingSupported={health?.sonos !== "direct"}
+          groupingSupported={Boolean(health?.sonos)}
           onClose={() => setDetailZoneId(null)}
           onControl={(action, value, station) => onZoneControl(detailZone.id, action, value, station)}
           onQueue={onQueueControl}

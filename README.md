@@ -32,6 +32,10 @@ A production-ready smart home app that demonstrates **TypeSafe's System One mode
 - 💾 **Favorites** — Quick access to saved stations
 - 📱 **Mobile-First UI** — Responsive design, works on phones and tablets
 
+### Wall panel
+
+Aura also includes a status-first wall-panel shell designed for the Sonoff NSPanel Pro 120PW and NSPanel Pro Gen2. The Home view presents a glanceable home state, now-playing signal, and nearby-sky entry point. Flights and History are reserved views for the upcoming Home Assistant history and server-side ADS-B integrations. Demo mode keeps these surfaces usable without real devices or external flight data.
+
 ## How It Works: TypeSafe + Jev
 
 ### The Natural Language Pipeline

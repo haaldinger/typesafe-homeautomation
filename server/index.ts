@@ -16,6 +16,7 @@ import { rawTransportDirect } from "./sonos-direct.ts";
 import { getLightSync, setLightSync, startLightSync } from "./lightsync.ts";
 import { suggestFor } from "./suggest.ts";
 import { interruptPatterns, listPatterns, PATTERN_PRESETS, startPattern, stopPattern } from "./patterns.ts";
+import { getFlights } from "./flights.ts";
 
 const app = express();
 app.use(cors());
@@ -137,6 +138,10 @@ app.post("/api/reset", (_req, res) => {
 
 app.get("/api/stations", (_req, res) => {
   res.json(STATIONS.map((s) => ({ id: s.id, name: s.name, ...(s.category ? { category: s.category } : {}) })));
+});
+
+app.get("/api/flights", (_req, res) => {
+  res.json(getFlights());
 });
 
 // Play queue for one zone (WallPanel-style now-playing detail view).

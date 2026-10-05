@@ -10,6 +10,7 @@ import type {
   DeviceAction,
   EqState,
   Favorite,
+  FlightResponse,
   HomeState,
   PatternKind,
   QueueTrack,
@@ -92,6 +93,7 @@ export const fetchHealth = () => getJson<HealthInfo>("/api/health", "health");
 export const fetchHome = () => getJson<HomeState>("/api/home", "home");
 export const fetchZones = () => getJson<SonosZone[]>("/api/zones", "zones");
 export const fetchStations = () => getJson<StationInfo[]>("/api/stations", "stations");
+export const fetchFlights = () => getJson<FlightResponse>("/api/flights", "flights");
 
 export const fetchPatterns = () => getJson<RunningPattern[]>("/api/patterns", "patterns");
 export const startPattern = (room: string, kind: PatternKind, colors?: string[]) =>

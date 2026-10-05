@@ -17,13 +17,18 @@ function load(): Profile {
   }
 }
 
-let profile: Profile = load();
+// AURA_PROFILE=demo|home pins the mode for this process (e.g. a second test
+// instance) without reading or rewriting the shared .aura-profile.json.
+const pinned = process.env.AURA_PROFILE === "demo" || process.env.AURA_PROFILE === "home" ? process.env.AURA_PROFILE : undefined;
+
+let profile: Profile = pinned ?? load();
 
 export const getProfile = (): Profile => profile;
 export const isDemo = (): boolean => profile === "demo";
 
 export function setProfile(next: Profile): void {
   profile = next;
+  if (pinned) return;
   try {
     writeFileSync(FILE, JSON.stringify({ profile }));
   } catch {
