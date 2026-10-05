@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { getDemoFlights, getFlights, LNS_AIRPORT } from "./flights.ts";
+
+process.env.AURA_PROFILE = "demo";
+const { getDemoFlights, getFlights, LNS_AIRPORT } = await import("./flights.ts");
 
 test("demo flights preserve the existing response contract", async () => {
 	const response = await getDemoFlights();

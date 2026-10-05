@@ -141,7 +141,11 @@ app.get("/api/stations", (_req, res) => {
 });
 
 app.get("/api/flights", async (_req, res) => {
-  res.json(await getFlights());
+  try {
+    res.json(await getFlights());
+  } catch (err) {
+    res.status(500).json({ error: errMsg(err) });
+  }
 });
 
 // Play queue for one zone (WallPanel-style now-playing detail view).
