@@ -292,6 +292,9 @@ export function ZoneDetail({
 
   const tabs: { id: Tab; label: string; icon: ReactNode; accent?: string }[] = [
     { id: "queue", label: `Up Next (${queue.length})`, icon: <ListMusic className="w-3.5 h-3.5" /> },
+    ...(showGroupTab
+      ? [{ id: "group" as Tab, label: "Group", icon: <Users className="w-3.5 h-3.5 text-blue-400" />, accent: "blue" }]
+      : []),
     { id: "radio", label: "Radio", icon: <Radio className="w-3.5 h-3.5" /> },
     { id: "favorites", label: "Favorites", icon: <Star className="w-3.5 h-3.5" /> },
     { id: "spotify", label: "Spotify", icon: <Music2 className="w-3.5 h-3.5 text-emerald-400" />, accent: "emerald" },
@@ -300,9 +303,6 @@ export function ZoneDetail({
       : []),
     { id: "lyrics", label: "Lyrics", icon: <MicVocal className="w-3.5 h-3.5" /> },
     { id: "eq", label: "Sound", icon: <SlidersHorizontal className="w-3.5 h-3.5" /> },
-    ...(showGroupTab
-      ? [{ id: "group" as Tab, label: "Group", icon: <Users className="w-3.5 h-3.5 text-blue-400" />, accent: "blue" }]
-      : []),
   ];
 
   const tabClass = (t: (typeof tabs)[number]) => {
