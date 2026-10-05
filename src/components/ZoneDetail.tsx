@@ -25,12 +25,14 @@ import {
   ListPlus,
   PanelRightClose,
   PanelRightOpen,
+  Tv,
 } from "lucide-react";
 import {
   fetchEq,
   fetchFavorites,
   fetchLyrics,
   fetchSuggestions,
+  playTv,
   searchRadio,
   searchSpotify,
   setEq,
@@ -464,6 +466,17 @@ export function ZoneDetail({
               </div>
 
               <div className="flex items-center justify-center gap-4">
+                {zone.hasTvSource && (
+                  <button
+                    type="button"
+                    onClick={() => playTv(zone.id).then(onClose).catch(() => {})}
+                    className="flex min-h-11 items-center gap-1.5 rounded-xl border border-sky-500/30 bg-sky-500/10 px-3 text-xs font-semibold text-sky-200 transition hover:border-sky-400/60 hover:bg-sky-500/20"
+                    aria-label={`Return ${zone.name} to TV audio`}
+                  >
+                    <Tv className="h-4 w-4" aria-hidden="true" />
+                    TV
+                  </button>
+                )}
                 <button
                   onClick={() => onControl("previous")}
                   className="p-2.5 touch:min-w-12 touch:min-h-12 flex items-center justify-center rounded-xl hover:bg-neutral-900 text-neutral-400 hover:text-white transition"

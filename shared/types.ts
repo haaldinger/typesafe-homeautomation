@@ -108,6 +108,8 @@ export interface SonosZone {
   track: { title: string; artist: string; album?: string } | null;
   /** Active non-music source, such as TV audio over HDMI ARC. */
   source?: string;
+  /** True after Aura has observed a TV/HDMI ARC source for this zone. */
+  hasTvSource?: boolean;
   /** 0-100 */
   volume: number;
   /** Names of the other zones grouped with this one. */

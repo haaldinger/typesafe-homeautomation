@@ -298,6 +298,15 @@ app.post("/api/radio/play", async (req, res) => {
   }
 });
 
+app.post("/api/zones/:id/tv", async (req, res) => {
+  try {
+    await sonosGateway.playTv(req.params.id);
+    res.json(await sonosGateway.getZones());
+  } catch (err) {
+    res.status(500).json({ error: errMsg(err) });
+  }
+});
+
 // Sound / EQ controls for a zone.
 app.get("/api/zones/:id/eq", async (req, res) => {
   try {

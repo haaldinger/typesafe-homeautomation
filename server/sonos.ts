@@ -314,6 +314,7 @@ export interface SonosGateway {
   playSpotify(zoneId: string, uri: string, title?: string, mode?: "now" | "end"): Promise<void>;
   spotifyLinked(): boolean;
   playRadio(zoneId: string, url: string, name: string): Promise<void>;
+  playTv(zoneId: string): Promise<void>;
   getEq(zoneId: string): Promise<EqState>;
   setEq(zoneId: string, field: keyof EqState, value: number | boolean): Promise<void>;
 }
@@ -439,6 +440,20 @@ export const sonosGateway: SonosGateway = {
       zone.duration = 0;
       zone.elapsed = 0;
     }
+  },
+  async playTv(zoneId) {
+    if (directEnabled()) {
+      await applyDirect([{ zone: zoneId, zoneName: zoneId, kind: "play_tv", summary: "return to TV", chips: [] }]);
+      return;
+    }
+    if (MODE() === "live") {
+      const zones = await this.getZones();
+      const room = encodeURIComponent(zones.find((z) => z.id === zoneId)?.name ?? zoneId);
+      await sonosApi(`/${room}/play`);
+      return;
+    }
+    const zone = zoneById(zoneId);
+    if (zone) zone.playback = "playing";
   },
   async getEq(zoneId) {
     if (directEnabled()) return getEqDirect(zoneId);

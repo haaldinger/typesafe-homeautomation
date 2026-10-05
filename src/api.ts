@@ -196,6 +196,10 @@ export function playRadio(zoneId: string, url: string, name: string): Promise<So
   return postJson<SonosZone[]>("/api/radio/play", { zoneId, url, name }, "radio play");
 }
 
+export function playTv(zoneId: string): Promise<SonosZone[]> {
+  return postJson<SonosZone[]>(`/api/zones/${encodeURIComponent(zoneId)}/tv`, {}, "return to TV");
+}
+
 export function fetchEq(zoneId: string): Promise<EqState> {
   return getJson<EqState>(`/api/zones/${encodeURIComponent(zoneId)}/eq`, "eq fetch");
 }

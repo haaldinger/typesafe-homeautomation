@@ -160,6 +160,7 @@ async function soap(ip: string, svc: { type: string; control: string }, action: 
 const IID = "<InstanceID>0</InstanceID>";
 const roomCache = new Map<string, string>();
 const uuidCache = new Map<string, string>();
+const tvUriByZone = new Map<string, string>();
 
 async function roomName(ip: string): Promise<string> {
   if (roomCache.has(ip)) return roomCache.get(ip)!;
@@ -205,6 +206,17 @@ async function ungroupDirect(zoneId: string): Promise<void> {
   await soap(ip, AV, "BecomeCoordinatorOfStandaloneGroup", IID);
 }
 
+export async function playTvDirect(zoneId: string): Promise<void> {
+  const ip = await ipForZone(zoneId);
+  if (!ip) throw new Error("Zone not found");
+  const key = slug(await roomName(ip));
+  const uuid = await uuidForIp(ip);
+  const uri = tvUriByZone.get(key) ?? (uuid ? `x-sonos-htastream:${uuid}:spdif` : undefined);
+  if (!uri) throw new Error("TV input has not been observed for this zone yet");
+  await soap(ip, AV, "SetAVTransportURI", `${IID}<CurrentURI>${escapeXml(uri)}</CurrentURI><CurrentURIMetaData></CurrentURIMetaData>`);
+  await soap(ip, AV, "Play", `${IID}<Speed>1</Speed>`);
+}
+
 async function zoneFor(ip: string): Promise<SonosZone> {
   const name = await roomName(ip);
   const base: SonosZone = { id: slug(name), name, playback: "stopped", track: null, volume: 20, groupedWith: [], reachable: true };
@@ -222,6 +234,8 @@ async function zoneFor(ip: string): Promise<SonosZone> {
     base.elapsed = hmsToSec(tag(position, "RelTime"));
     const currentUri = unescapeXml(tag(position, "TrackURI") ?? "");
     base.source = sourceLabel(currentUri);
+    if (base.source === "TV / HDMI ARC") tvUriByZone.set(base.id, currentUri);
+    base.hasTvSource = tvUriByZone.has(base.id);
 
     const meta = tag(position, "TrackMetaData");
     if (meta && meta !== "NOT_IMPLEMENTED") {
@@ -668,6 +682,9 @@ export async function applyDirect(actions: AudioAction[]): Promise<void> {
         break;
       case "ungroup":
         await ungroupDirect(a.zone);
+        break;
+      case "play_tv":
+        await playTvDirect(a.zone);
         break;
       default:
         break;
