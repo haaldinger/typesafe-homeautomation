@@ -140,8 +140,8 @@ app.get("/api/stations", (_req, res) => {
   res.json(STATIONS.map((s) => ({ id: s.id, name: s.name, ...(s.category ? { category: s.category } : {}) })));
 });
 
-app.get("/api/flights", (_req, res) => {
-  res.json(getFlights());
+app.get("/api/flights", async (_req, res) => {
+  res.json(await getFlights());
 });
 
 // Play queue for one zone (WallPanel-style now-playing detail view).

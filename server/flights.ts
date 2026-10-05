@@ -62,11 +62,11 @@ const DEMO_AIRCRAFT: NearbyAircraft[] = [
 ];
 
 export interface FlightProvider {
-  getFlights(): FlightResponse;
+  getFlights(): Promise<FlightResponse>;
 }
 
 const demoProvider: FlightProvider = {
-  getFlights() {
+  async getFlights() {
     return {
       airport: LNS_AIRPORT.code,
       airportName: LNS_AIRPORT.name,
@@ -79,7 +79,7 @@ const demoProvider: FlightProvider = {
 };
 
 const unavailableProvider: FlightProvider = {
-  getFlights() {
+  async getFlights() {
     return {
       airport: LNS_AIRPORT.code,
       airportName: LNS_AIRPORT.name,
@@ -91,11 +91,11 @@ const unavailableProvider: FlightProvider = {
   },
 };
 
-export function getDemoFlights(): FlightResponse {
+export async function getDemoFlights(): Promise<FlightResponse> {
   return demoProvider.getFlights();
 }
 
-export function getFlights(): FlightResponse {
+export async function getFlights(): Promise<FlightResponse> {
   const provider = isDemo() || (process.env.FLIGHT_PROVIDER ?? "unavailable").toLowerCase() === "demo"
     ? demoProvider
     : unavailableProvider;
