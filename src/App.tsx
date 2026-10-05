@@ -18,11 +18,12 @@ import { ZoneCard } from "./components/ZoneCard.tsx";
 import { ZoneDetail } from "./components/ZoneDetail.tsx";
 import { Section, type SummaryChip } from "./components/Section.tsx";
 import { Inspector } from "./components/Inspector.tsx";
-import { Topbar } from "./components/Topbar.tsx";
+import { Topbar, type DevicePersona } from "./components/Topbar.tsx";
 import { QuickScenes } from "./components/QuickScenes.tsx";
 import { SettingsModal } from "./components/SettingsModal.tsx";
 import { WallPanelShell } from "./components/WallPanelShell.tsx";
-import { type WallPanelView } from "./components/WallPanelNav.tsx";
+import { WallPanelView } from "./components/WallPanelView.tsx";
+import { type WallPanelView as WallPanelTab } from "./components/WallPanelNav.tsx";
 import {
   fetchHealth,
   fetchHome,
@@ -199,7 +200,8 @@ export default function App() {
 
   const [showScenes, setShowScenes] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
-  const [wallPanelView, setWallPanelView] = useState<WallPanelView>("home");
+  const [wallPanelView, setWallPanelView] = useState<WallPanelTab>("home");
+  const [persona, setPersona] = useState<DevicePersona>("auto");
 
   // Collapsible + reorderable sections (persisted)
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set(readStorage<string[]>("aura.collapsed", [])));
@@ -856,6 +858,8 @@ export default function App() {
         onToggleInspector={toggleInspector}
         onOpenSettings={() => setShowSettings(true)}
         onOpenScenes={() => setShowScenes((s) => !s)}
+        persona={persona}
+        onChangePersona={setPersona}
       />
 
       {!inspectorOpen && (
@@ -874,7 +878,8 @@ export default function App() {
 
       <div className="flex-1 flex flex-col lg:flex-row lg:min-h-0 lg:overflow-hidden">
         <main className="flex-1 min-w-0 lg:overflow-y-auto pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))] sm:pl-[max(2rem,env(safe-area-inset-left))] sm:pr-[max(2rem,env(safe-area-inset-right))] pt-4 sm:pt-6 pb-[max(6rem,calc(env(safe-area-inset-bottom)_+_5rem))] lg:pb-6">
-          <div className="max-w-7xl mx-auto w-full">
+          {persona === "auto" ? (
+            <div className="max-w-7xl mx-auto w-full">
             {healthLoaded && !health && (
               <div className="mb-6 p-4 rounded-2xl bg-rose-950/30 border border-rose-500/40 text-sm text-rose-200">
                 Can't reach the Aura server. Start it with <code className="font-mono">npm run dev</code> and reload.
@@ -1081,7 +1086,42 @@ export default function App() {
                 </Section>
               ))}
             </div>
-          </div>
+            </div>
+          ) : (
+            <div className="min-h-full flex flex-col items-center justify-center gap-3 p-1 sm:p-4">
+              <span className="text-center text-[11px] font-mono uppercase tracking-widest text-amber-400 font-bold">
+                {persona === "nspanel-pro"
+                  ? "NSPanel Pro Gen2 · 480 x 480"
+                  : persona === "nspanel-120"
+                    ? "NSPanel 120PW · aspect-aware wall preview"
+                    : "iPhone · thumb-first controls"}
+              </span>
+              <div
+                className={
+                  persona === "nspanel-pro"
+                    ? "w-[min(92vw,480px)] aspect-square"
+                    : persona === "nspanel-120"
+                      ? "w-[min(96vw,calc((100dvh-9rem)*5/3))] max-w-full aspect-[5/3] max-h-[calc(100dvh-8rem)]"
+                      : "w-[min(92vw,390px)] aspect-[390/844] max-h-[calc(100dvh-5rem)]"
+                }
+              >
+                <WallPanelView
+                  home={home}
+                  zones={zones}
+                  flights={flights}
+                  status={status}
+                  aspect={persona === "nspanel-pro" ? "square" : persona === "nspanel-120" ? "rect-landscape" : "rect-portrait"}
+                  onToggleDevice={onManualToggle}
+                  onUpdateDevice={onDeviceUpdate}
+                  onZoneControl={onZoneControl}
+                  onRunScene={(command) => {
+                    setInput(command);
+                    void submit(command);
+                  }}
+                />
+              </div>
+            </div>
+          )}
         </main>
 
         {inspectorOpen && (

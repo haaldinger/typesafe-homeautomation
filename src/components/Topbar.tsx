@@ -1,6 +1,8 @@
-import { Sparkles, Lightbulb, Thermometer, Lock, Unlock, Speaker, Activity, Settings2 } from "lucide-react";
+import { Sparkles, Lightbulb, Thermometer, Lock, Unlock, Speaker, Activity, Settings2, Smartphone, Square, Layers } from "lucide-react";
 import type { HealthInfo } from "../api.ts";
 import { AuraMark } from "./AuraMark.tsx";
+
+export type DevicePersona = "auto" | "nspanel-pro" | "nspanel-120" | "iphone";
 
 interface TopbarProps {
   status: {
@@ -14,6 +16,8 @@ interface TopbarProps {
   health: HealthInfo | null;
   healthLoaded: boolean;
   inspectorOpen: boolean;
+  persona: DevicePersona;
+  onChangePersona: (persona: DevicePersona) => void;
   onToggleInspector: () => void;
   onOpenSettings: () => void;
   onOpenScenes: () => void;
@@ -25,6 +29,8 @@ export function Topbar({
   health,
   healthLoaded,
   inspectorOpen,
+  persona,
+  onChangePersona,
   onToggleInspector,
   onOpenSettings,
   onOpenScenes,
@@ -115,6 +121,12 @@ export function Topbar({
         </div>
 
         <div className="flex items-center gap-1.5 shrink-0">
+          <div className="hidden sm:flex items-center gap-0.5 bg-neutral-900/90 border border-neutral-800 rounded-xl p-0.5">
+            <button type="button" onClick={() => onChangePersona("auto")} className={`min-h-9 min-w-9 touch:min-h-11 touch:min-w-11 p-1.5 rounded-lg text-xs transition flex items-center justify-center ${persona === "auto" ? "bg-white/[0.12] text-amber-300" : "text-neutral-400 hover:text-white"}`} title="Responsive auto view" aria-label="Responsive auto view"><Settings2 className="w-3.5 h-3.5" /></button>
+            <button type="button" onClick={() => onChangePersona("iphone")} className={`min-h-9 min-w-9 touch:min-h-11 touch:min-w-11 p-1.5 rounded-lg text-xs transition flex items-center justify-center ${persona === "iphone" ? "bg-white/[0.12] text-amber-300" : "text-neutral-400 hover:text-white"}`} title="iPhone preview" aria-label="iPhone preview"><Smartphone className="w-3.5 h-3.5" /></button>
+            <button type="button" onClick={() => onChangePersona("nspanel-pro")} className={`min-h-9 min-w-9 touch:min-h-11 touch:min-w-11 p-1.5 rounded-lg text-xs transition flex items-center justify-center ${persona === "nspanel-pro" ? "bg-white/[0.12] text-amber-300" : "text-neutral-400 hover:text-white"}`} title="NSPanel Pro Gen2 preview" aria-label="NSPanel Pro Gen2 preview"><Square className="w-3.5 h-3.5" /></button>
+            <button type="button" onClick={() => onChangePersona("nspanel-120")} className={`min-h-9 min-w-9 touch:min-h-11 touch:min-w-11 p-1.5 rounded-lg text-xs transition flex items-center justify-center ${persona === "nspanel-120" ? "bg-white/[0.12] text-amber-300" : "text-neutral-400 hover:text-white"}`} title="NSPanel 120PW preview" aria-label="NSPanel 120PW preview"><Layers className="w-3.5 h-3.5" /></button>
+          </div>
           <button
             onClick={onOpenScenes}
             className={`${iconBtn} bg-neutral-900 hover:bg-neutral-800 border-neutral-800 hover:border-neutral-700 text-neutral-200 hover:text-white`}
