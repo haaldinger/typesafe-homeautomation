@@ -118,10 +118,10 @@ export function ZoneCard({ zone, flash = false, onControl, onOpen }: ZoneCardPro
           </div>
 
           <h4 className="text-sm font-semibold text-neutral-100 truncate group-hover:text-amber-300 transition">
-            {unreachable ? "Speaker unreachable" : track?.title || "Nothing playing"}
+            {unreachable ? "Speaker unreachable" : zone.source || track?.title || "Nothing playing"}
           </h4>
           <p className="text-xs text-neutral-400 truncate">
-            {unreachable ? "Couldn't reach this speaker on the network" : track?.artist || "Pick a station or track"}
+            {unreachable ? "Couldn't reach this speaker on the network" : zone.source ? "Audio source" : track?.artist || "Pick a station or track"}
           </p>
 
           {zone.duration ? (

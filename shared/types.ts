@@ -106,6 +106,8 @@ export interface SonosZone {
   name: string;
   playback: "playing" | "paused" | "stopped";
   track: { title: string; artist: string; album?: string } | null;
+  /** Active non-music source, such as TV audio over HDMI ARC. */
+  source?: string;
   /** 0-100 */
   volume: number;
   /** Names of the other zones grouped with this one. */

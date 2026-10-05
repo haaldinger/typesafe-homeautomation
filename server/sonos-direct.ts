@@ -125,6 +125,12 @@ function hmsToSec(hms?: string): number {
   return parts.reduce((acc, n) => acc * 60 + n, 0);
 }
 
+function sourceLabel(uri: string): string | undefined {
+  if (/x-sonos-htastream:.*:spdif/i.test(uri)) return "TV / HDMI ARC";
+  if (/x-sonos-htastream:/i.test(uri)) return "TV input";
+  return undefined;
+}
+
 async function soap(ip: string, svc: { type: string; control: string }, action: string, body: string): Promise<string> {
   const soapBody = `<?xml version="1.0"?><s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"><s:Body><u:${action} xmlns:u="${svc.type}">${body}</u:${action}></s:Body></s:Envelope>`;
   try {
@@ -214,6 +220,8 @@ async function zoneFor(ip: string): Promise<SonosZone> {
     base.volume = parseInt(tag(volume, "CurrentVolume") ?? "20", 10) || 20;
     base.duration = hmsToSec(tag(position, "TrackDuration"));
     base.elapsed = hmsToSec(tag(position, "RelTime"));
+    const currentUri = unescapeXml(tag(position, "TrackURI") ?? "");
+    base.source = sourceLabel(currentUri);
 
     const meta = tag(position, "TrackMetaData");
     if (meta && meta !== "NOT_IMPLEMENTED") {

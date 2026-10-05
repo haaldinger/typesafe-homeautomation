@@ -105,7 +105,7 @@ export function WallPanelShell({
             <Music2 className="h-5 w-5 text-amber-300" aria-hidden="true" />
             <span className="wall-panel-shell__media-copy">
               <span>Now playing</span>
-              <strong>{playingZone?.track?.title ?? "Nothing playing"}</strong>
+              <strong>{playingZone?.source ?? playingZone?.track?.title ?? "Nothing playing"}</strong>
             </span>
             {playingZone && <button type="button" onClick={() => onOpenZone(playingZone.id)}>Open zone <ChevronRight className="h-4 w-4" aria-hidden="true" /></button>}
           </div>
