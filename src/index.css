@@ -246,6 +246,8 @@ input[type=range]::-moz-range-track {
   --panel-cyan: #38bdf8;
   position: relative;
   overflow: hidden;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
   margin-bottom: 1.5rem;
   padding: clamp(1rem, 2.6vw, 2rem);
   border: 1px solid rgba(51, 65, 85, 0.8);
@@ -492,7 +494,9 @@ button.wall-panel-shell__metric:hover {
 .wall-panel-shell__media button,
 .wall-panel-shell__empty-view button,
 .wall-panel-shell__actions button {
+  flex: 0 0 auto;
   min-height: 2.75rem;
+  max-width: 100%;
   padding: 0.6rem 0.9rem;
   border: 1px solid rgba(71, 85, 105, 0.75);
   border-radius: 0.75rem;
@@ -500,6 +504,8 @@ button.wall-panel-shell__metric:hover {
   background: rgba(15, 23, 42, 0.7);
   font-size: 0.72rem;
   font-weight: 700;
+  line-height: 1.2;
+  white-space: nowrap;
   transition: border-color 160ms ease, color 160ms ease;
 }
 
@@ -515,6 +521,7 @@ button.wall-panel-shell__metric:hover {
   gap: 1rem;
   color: #64748b;
   font-size: 0.72rem;
+  line-height: 1.25;
 }
 
 .wall-panel-shell__actions button:disabled {
@@ -760,6 +767,16 @@ button.wall-panel-shell__metric:hover {
 
   .wall-panel-shell__metric {
     min-height: 5.5rem;
+  }
+
+  .wall-panel-shell__media,
+  .wall-panel-shell__actions {
+    flex-wrap: wrap;
+  }
+
+  .wall-panel-shell__media button,
+  .wall-panel-shell__actions button {
+    margin-left: auto;
   }
 }
 
