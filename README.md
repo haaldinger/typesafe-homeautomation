@@ -93,8 +93,9 @@ await sonosGateway.setVolume(zoneId, 30);
 
 2. **Configure `.env`:**
    ```
-   SONOS_HOSTS=192.168.1.125
+   SONOS_HOSTS=192.168.1.125,192.168.1.126,192.168.1.199,192.168.1.212
    SONOS_MODE=direct
+   SONOS_NAMES=192.168.1.125=Master Bath,192.168.1.126=Out Back,192.168.1.199=Kitchen,192.168.1.212=Living Room
    TYPESAFE_API_KEY=sk-***          # For voice commands
    SPOTIFY_CLIENT_ID=***            # For Spotify search
    SPOTIFY_CLIENT_SECRET=***
@@ -106,6 +107,24 @@ await sonosGateway.setVolume(zoneId, 30);
    ```
 
 4. **Open:** `http://localhost:5173`
+
+### Local LAN testing
+
+Run Aura on the computer that can reach the Sonos speakers, then open the Vite
+address from another device on the same network:
+
+```text
+http://<host-lan-ip>:5173
+```
+
+For example, a Fire HD can use `http://192.168.1.112:5173` when the host has
+that address. Do not use `localhost` from the Fire HD; it would refer to the
+tablet itself. The host firewall must allow TCP port 5173.
+
+The direct Sonos adapter uses the system `curl` client as a fallback when the
+Node runtime cannot reach a speaker directly. Keep this fallback in
+`server/sonos-direct.ts`; it is required for environments where `curl` can
+reach the local network but Node reports `EHOSTUNREACH`.
 
 ## Using the App
 
@@ -223,6 +242,7 @@ Jev answers **all questions at once**, with probability distributions and confid
 # Sonos
 SONOS_HOSTS=192.168.1.125,192.168.1.126  # Speaker IPs (comma-separated)
 SONOS_MODE=direct                          # direct or mock
+SONOS_NAMES=192.168.1.125=Master Bath,192.168.1.126=Out Back # Optional IP-to-room fallback names
 
 # TypeSafe (for voice)
 TYPESAFE_API_KEY=sk-***                    # Get from typesafe.ai
