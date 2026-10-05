@@ -2,7 +2,9 @@
 // discovery (which is often blocked by firewalls / managed networks). Configure
 // with SONOS_HOSTS=ip1,ip2 in .env. Handles transport, volume, and now-playing.
 
+import { execFile } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
+import { promisify } from "node:util";
 import type { AudioAction, EqState, Favorite, QueueTrack, SonosZone } from "../shared/types.ts";
 import { getSpotifyTracks } from "./spotify.ts";
 import { isDemo } from "./profile.ts";
@@ -19,6 +21,37 @@ const CD = {
   type: "urn:schemas-upnp-org:service:ContentDirectory:1",
   control: "/MediaServer/ContentDirectory/Control",
 };
+
+const execFileAsync = promisify(execFile);
+
+interface SonosRequest {
+  method?: "GET" | "POST";
+  headers?: Record<string, string>;
+  body?: string;
+}
+
+function isNetworkReachabilityError(error: unknown): boolean {
+  const cause = error instanceof Error && "cause" in error ? error.cause : undefined;
+  const code = cause && typeof cause === "object" && "code" in cause ? cause.code : undefined;
+  return code === "EHOSTUNREACH" || code === "ECONNREFUSED" || code === "ETIMEDOUT";
+}
+
+async function sonosRequest(url: string, options: SonosRequest = {}): Promise<{ status: number; text: string }> {
+  try {
+    const response = await fetch(url, options.body ? options : { signal: AbortSignal.timeout(4000) });
+    return { status: response.status, text: await response.text() };
+  } catch (error) {
+    if (!isNetworkReachabilityError(error)) throw error;
+    const args = ["--silent", "--show-error", "--fail-with-body", "--connect-timeout", "4", "--max-time", "4"];
+    if (options.method === "POST") {
+      args.push("--request", "POST");
+      for (const [name, value] of Object.entries(options.headers ?? {})) args.push("--header", `${name}: ${value}`);
+      args.push("--data-binary", options.body ?? "");
+    }
+    const result = await execFileAsync("curl", [...args, url], { maxBuffer: 4 * 1024 * 1024 });
+    return { status: 200, text: result.stdout };
+  }
+}
 
 export function directHosts(): string[] {
   return (process.env.SONOS_HOSTS ?? "")
@@ -95,23 +128,21 @@ function hmsToSec(hms?: string): number {
 async function soap(ip: string, svc: { type: string; control: string }, action: string, body: string): Promise<string> {
   const soapBody = `<?xml version="1.0"?><s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"><s:Body><u:${action} xmlns:u="${svc.type}">${body}</u:${action}></s:Body></s:Envelope>`;
   try {
-    const res = await fetch(`http://${ip}:1400${svc.control}`, {
+    const res = await sonosRequest(`http://${ip}:1400${svc.control}`, {
       method: "POST",
       headers: {
         "Content-Type": "text/xml; charset=utf-8",
         SOAPACTION: `"${svc.type}#${action}"`,
       },
       body: soapBody,
-      signal: AbortSignal.timeout(4000),
     });
-    const text = await res.text();
-    if (!res.ok) {
+    if (res.status < 200 || res.status >= 300) {
       if (action.includes("Bass") || action.includes("Treble") || action.includes("Loudness") || action.includes("EQ")) {
-        console.error(`[SOAP ${action}] Status ${res.status}`, text.slice(0, 500));
+        console.error(`[SOAP ${action}] Status ${res.status}`, res.text.slice(0, 500));
       }
       throw new Error(`Sonos ${ip} ${action} ${res.status}`);
     }
-    return text;
+    return res.text;
   } catch (e) {
     if (action.includes("Bass") || action.includes("Treble") || action.includes("Loudness") || action.includes("EQ")) {
       console.error(`[SOAP ${action}] Error on ${ip}:`, e instanceof Error ? e.message : String(e), e instanceof Error ? e.stack : "");
@@ -127,7 +158,8 @@ const uuidCache = new Map<string, string>();
 async function roomName(ip: string): Promise<string> {
   if (roomCache.has(ip)) return roomCache.get(ip)!;
   try {
-    const xml = await (await fetch(`http://${ip}:1400/xml/device_description.xml`, { signal: AbortSignal.timeout(4000) })).text();
+    const response = await sonosRequest(`http://${ip}:1400/xml/device_description.xml`);
+    const xml = response.text;
     const name = tag(xml, "roomName") ?? ip;
     const udn = (tag(xml, "UDN") ?? "").replace(/^uuid:/, "");
     roomCache.set(ip, name);
