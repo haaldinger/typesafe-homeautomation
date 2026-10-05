@@ -40,7 +40,7 @@ export function Topbar({
     "flex items-center justify-center gap-1.5 min-h-9 min-w-9 touch:min-h-11 touch:min-w-11 px-2.5 rounded-xl border text-xs font-medium transition shadow-sm";
 
   return (
-    <header className="border-b border-neutral-800/80 bg-neutral-950/70 backdrop-blur-xl lg:sticky top-0 z-30 pt-[max(0.875rem,env(safe-area-inset-top))] pb-3.5 pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))] sm:pl-[max(2rem,env(safe-area-inset-left))] sm:pr-[max(2rem,env(safe-area-inset-right))] transition-all">
+    <header className="border-b border-neutral-800/80 bg-neutral-950/70 backdrop-blur-xl lg:sticky top-0 z-50 pt-[max(0.875rem,env(safe-area-inset-top))] pb-3.5 pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))] sm:pl-[max(2rem,env(safe-area-inset-left))] sm:pr-[max(2rem,env(safe-area-inset-right))] transition-all">
       <div className="max-w-7xl mx-auto flex flex-wrap xl:flex-nowrap items-center gap-x-4 gap-y-3">
         <div className="flex items-center gap-3 sm:gap-3.5 min-w-0 flex-1 xl:flex-none">
           <div className="relative group shrink-0">

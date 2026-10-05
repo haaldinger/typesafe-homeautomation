@@ -61,6 +61,7 @@ export function WallPanelView({
   const activeZone = zones.find((z) => z.playback === "playing") || zones[0];
   const isPlaying = activeZone?.playback === "playing";
   const isTv = Boolean(activeZone?.source?.toLowerCase().includes("tv") || activeZone?.source?.toLowerCase().includes("arc"));
+  const compactHeader = aspect !== "rect-landscape";
   const scenes = scenesFor();
   const rooms = (home?.rooms ?? []).map((room) => ({
     room,
@@ -73,7 +74,7 @@ export function WallPanelView({
       data-aspect={aspect}
       className="w-full h-full flex flex-col bg-[#05070a] text-white select-none overflow-hidden font-sans border border-white/[0.08] rounded-3xl shadow-2xl"
     >
-      <header className="shrink-0 flex items-center justify-between gap-3 px-4 sm:px-6 py-3 bg-[#0c1017] border-b border-white/[0.08]">
+      <header className={`shrink-0 flex gap-3 px-4 sm:px-6 py-3 bg-[#0c1017] border-b border-white/[0.08] ${compactHeader ? "flex-col" : "items-center justify-between"}`}>
         <div className="flex items-center gap-3 min-w-0">
           <AuraMark size={32} className="rounded-xl shadow-md shadow-amber-500/20" />
           <div className="min-w-0">
@@ -92,7 +93,7 @@ export function WallPanelView({
             </div>
           </div>
         </div>
-        <nav className="flex items-center gap-1 bg-white/[0.04] p-1 rounded-2xl border border-white/[0.06] overflow-x-auto no-scrollbar" aria-label="Wall panel views">
+        <nav className={`flex items-center gap-1 bg-white/[0.04] p-1 rounded-2xl border border-white/[0.06] overflow-x-auto no-scrollbar ${compactHeader ? "w-full justify-between" : ""}`} aria-label="Wall panel views">
           {[
             ["glance", "Home"],
             ["lights", "Lights"],
@@ -104,7 +105,7 @@ export function WallPanelView({
               key={id}
               type="button"
               onClick={() => setTab(id as typeof tab)}
-              className={`min-h-11 min-w-[54px] px-3 rounded-xl text-xs font-bold transition-colors ${tab === id ? "bg-amber-500 text-neutral-950 shadow-md" : "text-neutral-300 hover:text-white hover:bg-white/[0.06]"}`}
+              className={`min-h-11 min-w-[54px] px-2.5 sm:px-3 rounded-xl text-xs font-bold transition-colors ${tab === id ? "bg-amber-500 text-neutral-950 shadow-md" : "text-neutral-300 hover:text-white hover:bg-white/[0.06]"}`}
             >
               {label}
             </button>
@@ -115,7 +116,7 @@ export function WallPanelView({
       <main className="flex-1 min-h-0 overflow-y-auto p-4 sm:p-5">
         {tab === "glance" && (
           <div className="h-full flex flex-col gap-4">
-            <div className="grid grid-cols-3 gap-3">
+            <div className={`grid gap-3 ${aspect === "rect-portrait" ? "grid-cols-1 min-[360px]:grid-cols-3" : "grid-cols-3"}`}>
               <button type="button" onClick={() => setTab("lights")} className="p-3.5 rounded-2xl bg-[#0f141f] border border-white/[0.08] text-left min-h-20 flex flex-col justify-between tactile-button">
                 <div className="flex items-center justify-between text-neutral-400"><Lightbulb className={`w-5 h-5 ${status.on > 0 ? "text-amber-400" : ""}`} /><span className="text-[10px] font-mono uppercase">Lights</span></div>
                 <div><strong className="text-xl font-bold font-mono tabular-nums">{status.on} on</strong><span className="block text-[11px] text-neutral-400 truncate">Tap to control</span></div>

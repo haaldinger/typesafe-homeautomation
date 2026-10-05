@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
 /* Touch screens (and anything phone-narrow): bigger tap targets. `touch:min-h-11` etc. */
-@custom-variant touch (@media (pointer: coarse), (max-width: 767.98px));
+@custom-variant touch (@media (pointer: coarse));
 /* Short viewports (landscape phones, small laptops): tighten vertical rhythm. */
 @custom-variant short (@media (max-height: 720px));
 

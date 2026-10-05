@@ -227,12 +227,22 @@ export default function App() {
     });
   }
 
+  function changePersona(next: DevicePersona) {
+    setPersona(next);
+    if (next !== "auto") {
+      setDetailZoneId(null);
+      setShowSettings(false);
+      setShowScenes(false);
+      setInspectorOpen(false);
+    }
+  }
+
   // HTML5 drag-and-drop only works with a mouse; on touch screens it just gets in the way.
   const canDrag = useMemo(() => window.matchMedia?.("(pointer: fine)").matches ?? true, []);
 
   // While a full-screen modal or the trace sheet is open, the page behind must not scroll
   // (on iOS a swipe on the overlay otherwise drags the whole page underneath).
-  const overlayOpen = Boolean(detailZoneId) || showSettings || (inspectorOpen && !isWide());
+  const overlayOpen = persona === "auto" && (Boolean(detailZoneId) || showSettings || (inspectorOpen && !isWide()));
   useEffect(() => {
     if (!overlayOpen) return;
     const html = document.documentElement;
@@ -849,20 +859,36 @@ export default function App() {
 
   return (
     <div className="min-h-dvh lg:h-dvh bg-neutral-950 text-neutral-100 flex flex-col font-sans">
-      <Topbar
-        status={status}
-        activeZonesCount={activeZonesCount}
-        health={health}
-        healthLoaded={healthLoaded}
-        inspectorOpen={inspectorOpen}
-        onToggleInspector={toggleInspector}
-        onOpenSettings={() => setShowSettings(true)}
-        onOpenScenes={() => setShowScenes((s) => !s)}
-        persona={persona}
-        onChangePersona={setPersona}
-      />
+      {persona === "auto" ? (
+        <Topbar
+          status={status}
+          activeZonesCount={activeZonesCount}
+          health={health}
+          healthLoaded={healthLoaded}
+          inspectorOpen={inspectorOpen}
+          onToggleInspector={toggleInspector}
+          onOpenSettings={() => setShowSettings(true)}
+          onOpenScenes={() => setShowScenes((s) => !s)}
+          persona={persona}
+          onChangePersona={changePersona}
+        />
+      ) : (
+        <header className="shrink-0 flex items-center justify-between gap-3 px-4 py-3 sm:px-6 border-b border-neutral-800/80 bg-neutral-950/90">
+          <button
+            type="button"
+            onClick={() => changePersona("auto")}
+            className="min-h-11 rounded-xl border border-neutral-800 bg-neutral-900 px-3 text-xs font-semibold text-neutral-300 transition hover:border-neutral-700 hover:text-white"
+          >
+            Back to workspace
+          </button>
+          <span className="truncate text-[11px] font-mono font-bold uppercase tracking-[0.16em] text-amber-400">
+            {persona === "nspanel-pro" ? "NSPanel Pro Gen2" : persona === "nspanel-120" ? "NSPanel 120PW" : "iPhone preview"}
+          </span>
+          <span className="w-[8.5rem] text-right text-[11px] text-neutral-500">Preview mode</span>
+        </header>
+      )}
 
-      {!inspectorOpen && (
+      {persona === "auto" && !inspectorOpen && (
         <button
           onClick={toggleInspector}
           className="fixed bottom-[max(1rem,env(safe-area-inset-bottom))] right-[max(1rem,env(safe-area-inset-right))] sm:bottom-[max(1.5rem,env(safe-area-inset-bottom))] sm:right-[max(1.5rem,env(safe-area-inset-right))] z-40 flex items-center gap-2 px-3.5 py-2.5 touch:min-h-11 rounded-2xl bg-neutral-900/90 hover:bg-neutral-800 border border-neutral-700/80 text-neutral-300 hover:text-white shadow-2xl backdrop-blur-md transition group"
@@ -1124,7 +1150,7 @@ export default function App() {
           )}
         </main>
 
-        {inspectorOpen && (
+        {persona === "auto" && inspectorOpen && (
           <>
             {/* Below lg the trace is a sheet over the page; tap outside to close. */}
             <div className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm lg:hidden" onClick={toggleInspector} aria-hidden />
@@ -1133,7 +1159,7 @@ export default function App() {
         )}
       </div>
 
-      {detailZone && (
+      {persona === "auto" && detailZone && (
         <ZoneDetail
           zone={detailZone}
           queue={queue}
@@ -1160,7 +1186,7 @@ export default function App() {
         />
       )}
 
-      {showSettings && (
+      {persona === "auto" && showSettings && (
         <SettingsModal
           health={health}
           onClose={() => setShowSettings(false)}
